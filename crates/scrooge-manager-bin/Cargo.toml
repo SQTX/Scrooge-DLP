@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[package]
+name             = "scrooge-manager-bin"
+description      = "ScroogeDLP central server binary (`scrooge-manager`)."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+
+[[bin]]
+name = "scrooge-manager"
+path = "src/main.rs"
+
+[dependencies]
+scrooge-common      = { path = "../scrooge-common" }
+scrooge-proto       = { path = "../scrooge-proto" }
+scrooge-manager-api = { path = "../scrooge-manager-api" }
+
+tokio.workspace              = true
+tokio-stream.workspace       = true
+tonic.workspace              = true
+sqlx.workspace               = true
+tracing.workspace            = true
+tracing-subscriber.workspace = true
+anyhow.workspace             = true
+clap.workspace               = true
+uuid.workspace               = true
+chrono.workspace             = true
+sha2.workspace               = true
+
+[lints]
+workspace = true
