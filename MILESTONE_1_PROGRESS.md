@@ -1,8 +1,8 @@
 # Milestone 1 — Status pracy
 
 > **Stan na:** 2026-05-11
-> **Branch:** `main` (worktree `claude/serene-wu-9d377e` usunięty)
-> **Sesja zatrzymana na:** **Krok 11 done** — przed Krokiem 12 (smoke E2E + docs).
+> **Branch:** `main`
+> **Status:** ✅ **MILESTONE 1 COMPLETE** — wszystkie 12 kroków zakończone i zmergowane.
 
 ---
 
@@ -20,6 +20,7 @@
 | 9 | `49205cb` + `2520d6b` (fix) | `scroogectl init-ca` + `Dockerfile.manager` multi-stage cargo-chef + production `docker-compose.yml` + interaktywny `quickstart.sh` + `deploy/README.md` |
 | 10 | `7d27966` | UTM VM workflow: `setup-ubuntu-vm.sh` + `rebuild-and-restart-agent.sh` + `scrooge-agent.service` (systemd) + `agent.vm.yaml.example` + `manager.dev-vm.yaml` (0.0.0.0 listen) + `dev-manager-vm` Makefile target + cert SAN z UTM Mac IP + `deploy/dev/README.md` (200-line UTM guide) |
 | 11 | `f65dc21` | `.github/workflows/ci.yml` (fmt + clippy + test + build, matrix linux/macos, concurrency cancel-in-progress, Swatinem cache) + README CI/GPLv2 badges |
+| 12 | _pending_ | `scripts/smoke-e2e.sh` (8-stage automated test) + `docs/E2E_TESTING.md` + `make e2e-test` / `e2e-test-keep` Makefile targety |
 
 **Status weryfikacji:**
 - `cargo build --workspace` ✅
@@ -30,21 +31,11 @@
 
 ---
 
-## Co dalej (Krok 12)
+## Milestone 1 — KOMPLET ✅
 
-### Krok 12 — Smoke test E2E (NASTĘPNY)
-- `deploy/dev/setup-ubuntu-vm.sh` (idempotentny: Rust, Docker, systemd unit, ufw)
-- `deploy/dev/rebuild-and-restart-agent.sh` (git pull → cargo build → systemctl restart)
-- `deploy/dev/run-manager-local.sh`
-- `deploy/dev/README.md` (UTM Shared Network, SSH, daily workflow, troubleshooting)
+Wszystkie 12 kroków zaimplementowane, zmergowane na `main`, zweryfikowane lokalnie.
 
-### Krok 11 — GitHub Actions CI
-- `.github/workflows/ci.yml`: fmt + clippy + test + build, matrix `ubuntu-latest` + `macos-latest`
-- README badge
-
-### Krok 12 — Smoke test E2E
-- Skrypt automatyzujący wszystko: dev-up → bootstrap → manager → agent na VM → curl /agents → assert
-- `docs/E2E_TESTING.md`
+**Następne kroki = Milestone 2: Polityki i targeting** (osobny brief). Nie zaczynamy automatycznie — czekamy na decyzję.
 
 ---
 
