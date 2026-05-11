@@ -1,5 +1,8 @@
 # ScroogeDLP
 
+[![CI](https://github.com/SQTX/Scrooge-DLP/actions/workflows/ci.yml/badge.svg)](https://github.com/SQTX/Scrooge-DLP/actions/workflows/ci.yml)
+[![License: GPL v2](https://img.shields.io/badge/License-GPL_v2-blue.svg)](LICENSE)
+
 **ScroogeDLP** to system Data Loss Prevention (DLP) inspirowany architekturą Wazuh,
 ale skupiony wyłącznie na DLP. Integruje się z Wazuh przez forwarding syslog
 (RFC 5424/5425) dla korelacji SIEM.

@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# ScroogeDLP - GitHub Actions CI
+#
+# 4 jobs: fmt + clippy + test + build (parallel). Matrix: ubuntu-latest + macos-latest.
+# Bez Windows w MVP — scrooge-agent-windows jest stub'em (Err(NotImplemented)),
+# pelna implementacja w Milestone 8+.
+#
+# Security note: nie uzywamy zadnego user-controlled inputu (github.event.*) w
+# `run:` stepach. Tylko matrix.os, github.workflow, github.ref (w concurrency
+# group, nie command), secrets.GITHUB_TOKEN.
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: cargo clippy (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: clippy-${{ matrix.os }}
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    name: cargo test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test-${{ matrix.os }}
+      - run: cargo test --workspace --all-targets
+
+  build:
+    name: cargo build --release (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: build-${{ matrix.os }}
+      - run: cargo build --workspace --release
+      - name: Verify binaries exist and respond to --version
+        shell: bash
+        run: |
+          test -x target/release/scrooge-manager
+          test -x target/release/scrooge-agent
+          test -x target/release/scroogectl
+          ./target/release/scrooge-manager --version
+          ./target/release/scrooge-agent --version
+          ./target/release/scroogectl --version
