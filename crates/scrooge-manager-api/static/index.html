@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ScroogeDLP Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .dot-live::before { content: '●'; color: #10b981; animation: pulse 2s infinite; }
+    .dot-idle::before { content: '○'; color: #9ca3af; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800">
+
+  <!-- LOGIN -->
+  <div id="login-screen" class="hidden min-h-screen items-center justify-center px-4">
+    <div class="bg-white shadow-sm border border-gray-200 rounded-lg p-8 w-full max-w-sm">
+      <div class="flex items-center mb-6">
+        <div class="h-10 w-10 bg-blue-600 rounded flex items-center justify-center text-white font-bold mr-3">S</div>
+        <div>
+          <h1 class="text-lg font-semibold">ScroogeDLP</h1>
+          <p class="text-xs text-gray-500">Manager Dashboard</p>
+        </div>
+      </div>
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+          <input id="username" type="text" autocomplete="username" required
+                 class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+          <input id="password" type="password" autocomplete="current-password" required
+                 class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div id="login-error" class="hidden text-sm text-red-600 bg-red-50 px-3 py-2 rounded"></div>
+        <button type="submit"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition">
+          Sign in
+        </button>
+      </form>
+      <p class="text-xs text-gray-400 mt-4 text-center">
+        Default dev: <code class="bg-gray-100 px-1">admin</code> / <code class="bg-gray-100 px-1">admin123</code>
+      </p>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main-screen" class="hidden">
+    <header class="bg-white border-b border-gray-200">
+      <div class="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center">
+          <div class="h-8 w-8 bg-blue-600 rounded flex items-center justify-center text-white font-bold mr-3 text-sm">S</div>
+          <h1 class="text-base font-semibold">ScroogeDLP</h1>
+        </div>
+        <div class="flex items-center space-x-4 text-sm">
+          <span class="text-gray-600">Signed in as <span id="current-user" class="font-medium text-gray-800"></span></span>
+          <button id="logout-btn" class="text-red-600 hover:text-red-800 font-medium">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-8">
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="text-2xl font-semibold">Agents</h2>
+          <p class="text-sm text-gray-500 mt-1">
+            <span id="agent-count">0</span> registered
+            <span class="text-gray-300 mx-2">·</span>
+            auto-refresh every 10s
+            <span class="text-gray-300 mx-2">·</span>
+            last updated <span id="last-refresh-time" class="text-gray-400">—</span>
+          </p>
+        </div>
+        <div class="flex space-x-2">
+          <button id="install-btn"
+                  class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded transition border border-gray-200">
+            + Install agent
+          </button>
+          <button id="refresh-btn"
+                  class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition">
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hostname</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OS / Arch</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Version</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enrolled</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last seen</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="agents-tbody" class="bg-white divide-y divide-gray-200"></tbody>
+        </table>
+        <div id="empty-state" class="hidden text-center py-16 text-gray-500">
+          <div class="text-4xl mb-2 text-gray-300">○</div>
+          <div>No agents registered yet.</div>
+          <div class="text-xs mt-2 text-gray-400">Click <strong>Install agent</strong> above for setup instructions.</div>
+        </div>
+      </div>
+
+      <details class="mt-6 text-sm text-gray-500">
+        <summary class="cursor-pointer hover:text-gray-700">API endpoints used by this dashboard</summary>
+        <div class="mt-2 ml-4 font-mono text-xs space-y-1">
+          <div><span class="text-green-600">POST</span> /api/v1/auth/login</div>
+          <div><span class="text-blue-600">GET</span> /api/v1/agents <span class="text-gray-400">(Bearer JWT)</span></div>
+          <div class="text-gray-400">… see full spec at <a href="/api/v1/docs" class="text-blue-600 hover:underline">/api/v1/docs</a></div>
+        </div>
+      </details>
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div id="install-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-lg max-w-2xl w-full">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Install a new agent</h3>
+        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+      </div>
+      <div class="px-6 py-4 space-y-3">
+        <p class="text-sm text-gray-600">
+          <strong>Aktualnie:</strong> nie ma jeszcze pre-built binarki w GitHub Releases ani install scriptu —
+          to milestone „Wazuh-flow" (poza zakresem Milestone 1). Tymczasem instalacja jest manualna:
+        </p>
+        <ol class="text-sm text-gray-700 list-decimal list-inside space-y-2">
+          <li>Sklonuj repo na docelową maszynę: <code class="bg-gray-100 px-1 rounded text-xs">git clone https://github.com/SQTX/Scrooge-DLP</code></li>
+          <li>Wygeneruj token: <code class="bg-gray-100 px-1 rounded text-xs">make dev-bootstrap</code> (na managerze)</li>
+          <li>Skopiuj <code class="bg-gray-100 px-1 rounded text-xs">dev-certs/ca.pem</code> na maszynę agenta</li>
+          <li>Konfig <code class="bg-gray-100 px-1 rounded text-xs">/etc/scrooge/agent.yaml</code> (endpoint + token + ca path)</li>
+          <li>Build i start: <code class="bg-gray-100 px-1 rounded text-xs">./deploy/dev/rebuild-and-restart-agent.sh</code></li>
+        </ol>
+        <p class="text-sm text-gray-600 mt-3">
+          Pełen guide:
+          <a href="https://github.com/SQTX/Scrooge-DLP/blob/main/deploy/dev/README.md" target="_blank"
+             class="text-blue-600 hover:underline">deploy/dev/README.md</a>
+        </p>
+      </div>
+      <div class="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
+        <button onclick="closeModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded shadow-lg text-sm"></div>
+
+  <script>
+    'use strict';
+    const TOKEN_KEY = 'scrooge_token';
+    const USER_KEY  = 'scrooge_user';
+    let refreshTimer = null;
+    const $ = id => document.getElementById(id);
+
+    function showLogin() {
+      $('login-screen').classList.remove('hidden');
+      $('login-screen').classList.add('flex');
+      $('main-screen').classList.add('hidden');
+      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+    }
+    function showMain() {
+      $('login-screen').classList.add('hidden');
+      $('login-screen').classList.remove('flex');
+      $('main-screen').classList.remove('hidden');
+      $('current-user').textContent = localStorage.getItem(USER_KEY) || 'admin';
+      loadAgents();
+      refreshTimer = setInterval(loadAgents, 10000);
+    }
+
+    function toast(msg) {
+      const el = $('toast');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 2500);
+    }
+
+    $('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = $('username').value.trim();
+      const password = $('password').value;
+      const errEl = $('login-error');
+      errEl.classList.add('hidden');
+      try {
+        const r = await fetch('/api/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          errEl.textContent = body.message || ('Login failed (HTTP ' + r.status + ')');
+          errEl.classList.remove('hidden');
+          return;
+        }
+        const body = await r.json();
+        localStorage.setItem(TOKEN_KEY, body.access_token);
+        localStorage.setItem(USER_KEY, username);
+        showMain();
+      } catch (err) {
+        errEl.textContent = 'Network error: ' + err.message;
+        errEl.classList.remove('hidden');
+      }
+    });
+
+    $('logout-btn').addEventListener('click', () => {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      showLogin();
+    });
+
+    $('refresh-btn').addEventListener('click', () => { loadAgents(); toast('Refreshed'); });
+
+    $('install-btn').addEventListener('click', () => $('install-modal').classList.remove('hidden'));
+    window.closeModal = () => $('install-modal').classList.add('hidden');
+    $('install-modal').addEventListener('click', (e) => { if (e.target.id === 'install-modal') closeModal(); });
+
+    async function loadAgents() {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) { showLogin(); return; }
+      try {
+        const r = await fetch('/api/v1/agents', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (r.status === 401) {
+          toast('Session expired — please log in again');
+          localStorage.removeItem(TOKEN_KEY);
+          showLogin();
+          return;
+        }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const agents = await r.json();
+        renderAgents(agents);
+      } catch (err) {
+        console.error('Failed to load agents:', err);
+        toast('Error: ' + err.message);
+      }
+    }
+
+    // Bezpieczne renderowanie przez createElement — żadnego innerHTML
+    // dla user-controlled inputów (hostname etc. mogą zawierać HTML).
+    function renderAgents(agents) {
+      const tbody = $('agents-tbody');
+      const empty = $('empty-state');
+      $('agent-count').textContent = agents.length;
+      $('last-refresh-time').textContent = new Date().toLocaleTimeString();
+
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+      if (agents.length === 0) {
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+
+      const now = Date.now();
+      for (const a of agents) {
+        const lastSeen = a.last_seen ? new Date(a.last_seen) : null;
+        const ageSec = lastSeen ? (now - lastSeen.getTime()) / 1000 : Infinity;
+        const isLive = ageSec < 60;
+
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+
+        // Status
+        const tdStatus = document.createElement('td');
+        tdStatus.className = 'px-6 py-3 whitespace-nowrap';
+        const dot = document.createElement('span');
+        dot.className = (isLive ? 'dot-live' : 'dot-idle') + ' mr-2';
+        const lbl = document.createElement('span');
+        lbl.className = 'text-xs ' + (isLive ? 'text-green-700 font-medium' : 'text-gray-500');
+        lbl.textContent = isLive ? 'active' : (a.status || 'unknown');
+        tdStatus.appendChild(dot); tdStatus.appendChild(lbl);
+        tr.appendChild(tdStatus);
+
+        // Hostname
+        const tdHost = document.createElement('td');
+        tdHost.className = 'px-6 py-3 whitespace-nowrap text-sm font-mono';
+        tdHost.textContent = a.hostname;
+        tr.appendChild(tdHost);
+
+        // OS / Arch
+        const tdOs = document.createElement('td');
+        tdOs.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-700';
+        tdOs.textContent = a.os + ' / ' + (a.arch || '?');
+        tr.appendChild(tdOs);
+
+        // Version
+        const tdVer = document.createElement('td');
+        tdVer.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-700';
+        tdVer.textContent = a.agent_version || '—';
+        tr.appendChild(tdVer);
+
+        // Enrolled
+        const tdEnr = document.createElement('td');
+        tdEnr.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-600';
+        tdEnr.title = a.enrolled_at || '';
+        tdEnr.textContent = formatAgo(new Date(a.enrolled_at));
+        tr.appendChild(tdEnr);
+
+        // Last seen
+        const tdLs = document.createElement('td');
+        tdLs.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-600';
+        tdLs.title = a.last_seen || '';
+        tdLs.textContent = lastSeen ? formatAgo(lastSeen) : '—';
+        tr.appendChild(tdLs);
+
+        // Actions
+        const tdAct = document.createElement('td');
+        tdAct.className = 'px-6 py-3 whitespace-nowrap text-xs';
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'text-gray-500 hover:text-gray-700 mr-3';
+        copyBtn.title = 'Kopiuj agent ID';
+        copyBtn.textContent = 'Copy ID';
+        copyBtn.addEventListener('click', () => {
+          navigator.clipboard.writeText(a.id);
+          toast('Agent ID skopiowany: ' + a.id.slice(0, 8) + '…');
+        });
+        const cmdBtn = document.createElement('button');
+        cmdBtn.className = 'text-blue-600 hover:text-blue-800';
+        cmdBtn.textContent = 'Send command';
+        cmdBtn.addEventListener('click', () => {
+          toast('Send-command (' + a.hostname + ') — wymaga POST /agents/{id}/command (Milestone 2+)');
+        });
+        tdAct.appendChild(copyBtn); tdAct.appendChild(cmdBtn);
+        tr.appendChild(tdAct);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    function formatAgo(d) {
+      const sec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+      if (sec < 60)    return sec + 's ago';
+      if (sec < 3600)  return Math.floor(sec / 60) + 'm ago';
+      if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+      return Math.floor(sec / 86400) + 'd ago';
+    }
+
+    if (localStorage.getItem(TOKEN_KEY)) showMain(); else showLogin();
+  </script>
+</body>
+</html>

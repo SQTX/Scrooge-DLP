@@ -27,6 +27,7 @@ pub mod state;
 use std::net::SocketAddr;
 
 use axum::{
+    response::Html,
     routing::{get, post},
     Router,
 };
@@ -39,6 +40,15 @@ use utoipa_swagger_ui::SwaggerUi;
 
 pub use state::AppState;
 
+/// Embedded dashboard HTML — minimalistyczny SPA (login + agents list).
+/// `include_str!` wpisuje treść pliku w binarkę przy compile time, więc
+/// `scrooge-manager` jest self-contained (zero filesystem deps).
+const DASHBOARD_HTML: &str = include_str!("../static/index.html");
+
+async fn dashboard() -> Html<&'static str> {
+    Html(DASHBOARD_HTML)
+}
+
 /// Buduje główny router REST API.
 pub fn router(state: AppState) -> Router {
     let v1 = Router::new()
@@ -48,6 +58,8 @@ pub fn router(state: AppState) -> Router {
         .with_state(state.clone());
 
     Router::new()
+        .route("/", get(dashboard))
+        .route("/dashboard", get(dashboard))
         .route("/health", get(handlers::health::health))
         .nest("/api/v1", v1)
         .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", ApiDoc::openapi()))
