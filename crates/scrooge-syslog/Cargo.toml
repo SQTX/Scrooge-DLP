@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[package]
+name             = "scrooge-syslog"
+description      = "RFC 5424/5425 syslog formatter for the ScroogeDLP manager."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+
+[lints]
+workspace = true

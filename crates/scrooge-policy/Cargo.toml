@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[package]
+name             = "scrooge-policy"
+description      = "Policy YAML parser, validator, and compiler for ScroogeDLP."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+
+[lints]
+workspace = true
