@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[package]
+name             = "scrooge-agent-bin"
+description      = "ScroogeDLP endpoint agent binary (`scrooge-agent`)."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+
+[[bin]]
+name = "scrooge-agent"
+path = "src/main.rs"
+
+[dependencies]
+scrooge-common     = { path = "../scrooge-common" }
+scrooge-proto      = { path = "../scrooge-proto" }
+scrooge-agent-core = { path = "../scrooge-agent-core" }
+
+tokio.workspace              = true
+tokio-stream.workspace       = true
+tonic.workspace              = true
+tracing.workspace            = true
+tracing-subscriber.workspace = true
+anyhow.workspace             = true
+clap.workspace               = true
+uuid.workspace               = true
+chrono.workspace             = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+scrooge-agent-linux = { path = "../scrooge-agent-linux" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+scrooge-agent-macos = { path = "../scrooge-agent-macos" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+scrooge-agent-windows = { path = "../scrooge-agent-windows" }
+
+[lints]
+workspace = true

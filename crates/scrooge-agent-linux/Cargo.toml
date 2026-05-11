@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: GPL-2.0-only
+[package]
+name             = "scrooge-agent-linux"
+description      = "Linux platform implementation of the ScroogeDLP agent."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+
+[dependencies]
+scrooge-agent-core = { path = "../scrooge-agent-core" }
+scrooge-proto      = { path = "../scrooge-proto" }
+
+async-trait.workspace = true
+tokio.workspace       = true
+tracing.workspace     = true
+
+[lints]
+workspace = true
