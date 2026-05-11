@@ -18,13 +18,17 @@ openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out ca.key
 openssl req -new -x509 -key ca.key -out ca.pem \
     -days 3650 -subj "/CN=ScroogeDLP Dev CA/O=ScroogeDLP/OU=Dev"
 
-echo "▸ generating server cert (signed by CA, valid 1y, SAN: localhost,127.0.0.1)…"
+# Mac IP w sieci UTM Shared Network (gateway dla VM) — żeby cert był ważny
+# z perspektywy agentów na VM łączących się do hosta. Override przez env.
+UTM_MAC_IP="${UTM_MAC_IP:-192.168.64.1}"
+
+echo "▸ generating server cert (signed by CA, valid 1y, SAN: localhost,127.0.0.1,${UTM_MAC_IP})…"
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out server.key
 openssl req -new -key server.key -out server.csr \
     -subj "/CN=localhost/O=ScroogeDLP/OU=Dev"
 
-cat > server.ext <<'EOF'
-subjectAltName=DNS:localhost,IP:127.0.0.1
+cat > server.ext <<EOF
+subjectAltName=DNS:localhost,IP:127.0.0.1,IP:${UTM_MAC_IP}
 keyUsage=digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth,clientAuth
 EOF

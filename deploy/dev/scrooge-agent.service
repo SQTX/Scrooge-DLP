@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# ScroogeDLP - systemd unit dla agenta.
+#
+# Instalacja przez `setup-ubuntu-vm.sh` do `/etc/systemd/system/scrooge-agent.service`.
+# Enable + start: `sudo systemctl enable --now scrooge-agent`
+# Status:         `sudo systemctl status scrooge-agent`
+# Logi:           `sudo journalctl -u scrooge-agent -f`
+
+[Unit]
+Description=ScroogeDLP endpoint agent
+Documentation=https://github.com/SQTX/Scrooge-DLP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scrooge
+Group=scrooge
+
+ExecStart=/usr/local/bin/scrooge-agent \
+    --config /etc/scrooge/agent.yaml \
+    --log-format json
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+StartLimitInterval=120
+StartLimitBurst=5
+
+# Resource limits (matching brief: <100MB RAM, <2% CPU)
+MemoryMax=256M
+CPUWeight=200
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/scrooge
+
+# Capabilities — agent może potrzebować podsłuchu sieci itp. w przyszłości
+# (Milestones 3-6 dorzucą AmbientCapabilities=CAP_NET_ADMIN itp.)
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Logi do journald w formacie JSON
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=scrooge-agent
+
+[Install]
+WantedBy=multi-user.target

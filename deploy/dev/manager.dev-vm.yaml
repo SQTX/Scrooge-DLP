@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# ScroogeDLP - manager config dla testów z VM.
+#
+# Różnica vs `manager.dev.yaml`:
+#  - gRPC + REST listenują na 0.0.0.0 (nie 127.0.0.1) - inaczej VM się nie połączy.
+#
+# Cert manager.server.pem MUSI mieć IP Maca w SAN — generate-dev-certs.sh
+# domyślnie dodaje 192.168.64.1 (gateway w UTM Shared Network).
+
+server:
+  grpc_listen_addr: "0.0.0.0:5443"
+  rest_listen_addr: "0.0.0.0:55000"
+  tls_cert_path:    "dev-certs/server.pem"
+  tls_key_path:     "dev-certs/server.key"
+  ca_cert_path:     "dev-certs/ca.pem"
+  ca_key_path:      "dev-certs/ca.key"
+
+database:
+  url:      "postgres://scrooge:scrooge-dev-password@localhost:5433/scrooge"
+  pool_max: 8
+
+syslog_forwarder:
+  enabled: false
+
+auth:
+  jwt_secret:               "dev-only-jwt-secret-DO-NOT-USE-IN-PRODUCTION-32chars-min!!"
+  access_token_ttl_secs:    3600
+  refresh_token_ttl_secs:   2592000

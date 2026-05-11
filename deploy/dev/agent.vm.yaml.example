@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# ScroogeDLP - agent config dla VM testowej.
+# Kopiowane przez `setup-ubuntu-vm.sh` do `/etc/scrooge/agent.yaml`.
+#
+# WYMAGA EDYCJI PRZED STARTEM AGENTA:
+#  - manager.endpoint: IP/hostname Maca w sieci UTM (gateway = 192.168.64.1)
+#  - manager.enrollment_token: token z 'scroogectl gen-token' na Macu
+
+manager:
+  # IP Maca w sieci UTM Shared Network (gateway dla VM).
+  # Sprawdź na VM przez: `ip route | grep default`
+  endpoint:         "192.168.64.1:5443"
+
+  # Wklej tu raw token wygenerowany przez `scroogectl gen-token` na Macu.
+  # Po pierwszym enrollment'cie agent zapisuje cert w data_dir — token można
+  # potem usunąć (agent będzie używał cert'u).
+  enrollment_token: "REPLACE-WITH-TOKEN-FROM-MAC"
+
+  verify_tls:       true
+
+  # CA cert managera — skopiowany z Maca przez `scp`.
+  ca_cert_path:     "/etc/scrooge/ca.pem"
+
+agent:
+  data_dir:                "/var/lib/scrooge"
+  log_level:               "info"
+  heartbeat_interval_secs: 30

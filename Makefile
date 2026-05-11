@@ -4,7 +4,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help build build-release check fmt fmt-check lint test check-all \
         clean docs proto ci-local install-tools \
-        dev-up dev-down dev-certs dev-bootstrap dev-manager dev-logs \
+        dev-up dev-down dev-certs dev-bootstrap dev-manager dev-manager-vm dev-agent dev-agent-reset dev-logs \
         dev-build-agent-linux
 
 # ── Help ─────────────────────────────────────────────────────────────────────
@@ -80,9 +80,14 @@ dev-bootstrap: ## Apply migrations + utwórz admin user + przykładowy enrollmen
 		tee dev-certs/enrollment-token.txt
 	@echo "  → token saved to dev-certs/enrollment-token.txt"
 
-dev-manager: ## Uruchom scrooge-manager z dev config'iem (pretty logi)
+dev-manager: ## Uruchom scrooge-manager z dev config'iem (pretty logi, listen 127.0.0.1)
 	cargo run --bin scrooge-manager -- \
 		--config deploy/dev/manager.dev.yaml \
+		--log-format pretty
+
+dev-manager-vm: ## Uruchom scrooge-manager listenujący na 0.0.0.0 (dla testów z UTM VM)
+	cargo run --bin scrooge-manager -- \
+		--config deploy/dev/manager.dev-vm.yaml \
 		--log-format pretty
 
 dev-agent: ## Uruchom scrooge-agent z dev config'iem (token z dev-certs/enrollment-token.txt)
