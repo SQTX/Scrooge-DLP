@@ -2,7 +2,7 @@
 
 > **Stan na:** 2026-05-11
 > **Branch:** `main` (worktree `claude/serene-wu-9d377e` usunięty)
-> **Sesja zatrzymana na:** **Krok 9 done** — przed Krokiem 10 (UTM VM setup).
+> **Sesja zatrzymana na:** **Krok 10 done** — przed Krokiem 11 (GitHub Actions CI).
 
 ---
 
@@ -17,7 +17,8 @@
 | 5–6 | `4ad3bad` | `scrooge-manager-bin` (gRPC + REST + JWT auth) + `scrooge-manager-api` + `scroogectl` CLI |
 | 7–8 | `2d0e0df` | `scrooge-agent-core` (PlatformAgent trait) + Linux/macOS/Windows + `scrooge-agent-bin` (enrollment + persistent Stream + heartbeat + reconnect) |
 | 6/8 dev | `2dc39fd` | Dev tooling: docker-compose, dev certs script, sample configs, Makefile `dev-*` targety |
-| 9 | _pending_ | `scroogectl init-ca` + `Dockerfile.manager` multi-stage cargo-chef + production `docker-compose.yml` + interaktywny `quickstart.sh` + `deploy/README.md` |
+| 9 | `49205cb` + `2520d6b` (fix) | `scroogectl init-ca` + `Dockerfile.manager` multi-stage cargo-chef + production `docker-compose.yml` + interaktywny `quickstart.sh` + `deploy/README.md` |
+| 10 | _pending_ | UTM VM workflow: `setup-ubuntu-vm.sh` + `rebuild-and-restart-agent.sh` + `scrooge-agent.service` (systemd) + `agent.vm.yaml.example` + `manager.dev-vm.yaml` (0.0.0.0 listen) + `dev-manager-vm` Makefile target + cert SAN z UTM Mac IP + `deploy/dev/README.md` (200-line UTM guide) |
 
 **Status weryfikacji:**
 - `cargo build --workspace` ✅
@@ -28,9 +29,9 @@
 
 ---
 
-## Co dalej (Kroki 10–12)
+## Co dalej (Kroki 11–12)
 
-### Krok 10 — Dev environment dla UTM workflow (NASTĘPNY)
+### Krok 11 — GitHub Actions CI (NASTĘPNY)
 - `deploy/dev/setup-ubuntu-vm.sh` (idempotentny: Rust, Docker, systemd unit, ufw)
 - `deploy/dev/rebuild-and-restart-agent.sh` (git pull → cargo build → systemctl restart)
 - `deploy/dev/run-manager-local.sh`
