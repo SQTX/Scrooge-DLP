@@ -51,9 +51,16 @@ ok "docker $(docker --version | awk '{print $3}' | tr -d ',') ready"
 
 # ──────────────────────────────────────────────────────────────────────────
 # 2. Build image (potrzebne żeby scroogectl init-ca działał)
+#
+# UŻYWAMY `docker build` bezpośrednio (nie `docker compose build`) — compose
+# parsuje całą definicję, w tym `${POSTGRES_PASSWORD:?…}` validation z
+# `postgres` service, którego env jeszcze nie znamy na tym etapie.
 # ──────────────────────────────────────────────────────────────────────────
 say "building scrooge-manager image (multi-stage, cache via cargo-chef)…"
-docker compose -f "$DOCKER_DIR/docker-compose.yml" build manager >/dev/null
+docker build \
+    -f "$DOCKER_DIR/Dockerfile.manager" \
+    -t scrooge-manager:local \
+    "$REPO_ROOT" >/dev/null
 ok "image built"
 
 # ──────────────────────────────────────────────────────────────────────────
