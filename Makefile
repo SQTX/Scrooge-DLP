@@ -5,7 +5,7 @@
 .PHONY: help build build-release check fmt fmt-check lint test check-all \
         clean docs proto ci-local install-tools \
         dev-up dev-down dev-certs dev-bootstrap dev-manager dev-manager-vm dev-agent dev-agent-reset dev-logs \
-        dev-build-agent-linux
+        dev-build-agent-linux e2e-test e2e-test-keep
 
 # ── Help ─────────────────────────────────────────────────────────────────────
 help:  ## Pokaż dostępne targety
@@ -103,6 +103,13 @@ dev-agent: ## Uruchom scrooge-agent z dev config'iem (token z dev-certs/enrollme
 
 dev-agent-reset: ## Wyczyść agent-data (force re-enrollment)
 	rm -rf agent-data
+
+# ── E2E ──────────────────────────────────────────────────────────────────────
+e2e-test: ## Automatyczny smoke test pełnego pipeline'u (~1-2 min)
+	./scripts/smoke-e2e.sh
+
+e2e-test-keep: ## E2E + zostaw manager/agent biegające po teście (dla manual inspection)
+	./scripts/smoke-e2e.sh --keep-running
 
 dev-logs: ## Tail logów Postgresa
 	docker compose -f deploy/dev/docker-compose.yml logs -f postgres
