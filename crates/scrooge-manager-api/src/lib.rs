@@ -31,7 +31,10 @@ use axum::{
     Router,
 };
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
-use utoipa::OpenApi;
+use utoipa::{
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
+    Modify, OpenApi,
+};
 use utoipa_swagger_ui::SwaggerUi;
 
 pub use state::AppState;
@@ -71,8 +74,32 @@ pub async fn serve(
 // OpenAPI document
 // ────────────────────────────────────────────────────────────────────────────
 
+/// Rejestruje `bearer_auth` jako security scheme w OpenAPI spec.
+/// Bez tego Swagger UI nie wie jak prosić o token (przycisk "Authorize" nie reaguje).
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.get_or_insert_with(Default::default);
+        components.add_security_scheme(
+            "bearer_auth",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("JWT")
+                    .description(Some(
+                        "Wklej `access_token` z `POST /api/v1/auth/login`. \
+                         Swagger sam dorzuci prefix `Bearer ` — wklej **sam token**.",
+                    ))
+                    .build(),
+            ),
+        );
+    }
+}
+
 #[derive(OpenApi)]
 #[openapi(
+    modifiers(&SecurityAddon),
     info(
         title = "ScroogeDLP Manager API",
         version = "0.1.0",
