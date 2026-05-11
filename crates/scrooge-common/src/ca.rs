@@ -38,7 +38,7 @@ use std::path::Path;
 
 use rcgen::{
     BasicConstraints, Certificate, CertificateParams, CertificateSigningRequestParams,
-    DistinguishedName, DnType, IsCa, KeyPair, KeyUsagePurpose,
+    DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose, SanType,
 };
 
 use crate::error::CaError;
@@ -153,6 +153,45 @@ impl RootCa {
         let signed = csr.signed_by(&self.cert, &self.key_pair)?;
         Ok(signed.pem())
     }
+}
+
+/// Generuje keypair + CSR (PEM) dla managera (server cert podpisywany przez
+/// własne root CA przy quickstart).
+///
+/// `sans` zawiera listę nazw — DNS-like (np. `"localhost"`, `"scrooge-manager"`)
+/// trafia do SAN.DnsName, a parsowalne IP (np. `"127.0.0.1"`) do SAN.IpAddress.
+///
+/// Zwraca `(csr_pem, key_pem)`. Cert podpisuje się potem przez [`RootCa::sign_csr`].
+pub fn generate_server_csr(
+    common_name: &str,
+    sans: &[String],
+) -> Result<(String, String), CaError> {
+    let key_pair = KeyPair::generate()?;
+    let (dns, ips): (Vec<_>, Vec<_>) = sans
+        .iter()
+        .partition(|s| s.parse::<std::net::IpAddr>().is_err());
+
+    let mut params = CertificateParams::new(dns.into_iter().cloned().collect::<Vec<_>>())?;
+    for ip in ips {
+        if let Ok(addr) = ip.parse::<std::net::IpAddr>() {
+            params.subject_alt_names.push(SanType::IpAddress(addr));
+        }
+    }
+
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, common_name);
+    dn.push(DnType::OrganizationName, "ScroogeDLP");
+    params.distinguished_name = dn;
+    params.key_usages = vec![
+        KeyUsagePurpose::DigitalSignature,
+        KeyUsagePurpose::KeyEncipherment,
+    ];
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+
+    let csr = params.serialize_request(&key_pair)?;
+    let csr_pem = csr.pem()?;
+    let key_pem = key_pair.serialize_pem();
+    Ok((csr_pem, key_pem))
 }
 
 /// Generuje keypair + CSR (PEM) dla agenta enrollment'u.

@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# ScroogeDLP - Manager Dockerfile
+#
+# Multi-stage build z `cargo-chef` dla cache layer dependencies.
+# - Stage 1 (planner): generuje recipe.json z workspace deps
+# - Stage 2 (cacher):  buduje tylko deps (cache layer)
+# - Stage 3 (builder): buduje workspace
+# - Stage 4 (runtime): slim image z manager + scroogectl binaries
+#
+# Result: ~80MB final image, ~5s rebuild dla zmian w source (deps cached).
+
+# ──────────────────────────────────────────────────────────────────────────
+# Stage 1: chef planner — produces recipe.json
+# ──────────────────────────────────────────────────────────────────────────
+FROM rust:1.83-slim-bookworm AS chef
+RUN cargo install cargo-chef --locked --version 0.1.68
+WORKDIR /app
+
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ──────────────────────────────────────────────────────────────────────────
+# Stage 2: cacher — builds deps only (cached layer)
+# ──────────────────────────────────────────────────────────────────────────
+FROM chef AS cacher
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        protobuf-compiler \
+        pkg-config \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release \
+        --bin scrooge-manager \
+        --bin scroogectl \
+        --recipe-path recipe.json
+
+# ──────────────────────────────────────────────────────────────────────────
+# Stage 3: builder — full workspace build
+# ──────────────────────────────────────────────────────────────────────────
+FROM chef AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        protobuf-compiler \
+        pkg-config \
+        libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=cacher /app/target target
+COPY --from=cacher /usr/local/cargo /usr/local/cargo
+COPY . .
+RUN cargo build --release \
+        --bin scrooge-manager \
+        --bin scroogectl
+
+# ──────────────────────────────────────────────────────────────────────────
+# Stage 4: runtime — slim debian z 2 binarki + migracje
+# ──────────────────────────────────────────────────────────────────────────
+FROM debian:bookworm-slim AS runtime
+
+# CA certyfikaty systemowe (rustls używa do verifikacji upstream'ów,
+# nie wymagane dla naszego self-signed CA ale healthy default).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libssl3 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 1000 --user-group --home /var/lib/scrooge scrooge \
+    && mkdir -p /etc/scrooge /var/lib/scrooge /var/lib/scrooge/certs \
+    && chown -R scrooge:scrooge /etc/scrooge /var/lib/scrooge
+
+COPY --from=builder /app/target/release/scrooge-manager /usr/local/bin/scrooge-manager
+COPY --from=builder /app/target/release/scroogectl /usr/local/bin/scroogectl
+
+USER scrooge
+WORKDIR /var/lib/scrooge
+
+EXPOSE 5443 55000
+
+ENTRYPOINT ["/usr/local/bin/scrooge-manager"]
+CMD ["--config", "/etc/scrooge/manager.yaml", "--log-format", "json"]

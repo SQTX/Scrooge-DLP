@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# ScroogeDLP - production manager config template.
+#
+# Kopiowane do `deploy/docker/manager.yaml` przez `quickstart.sh`.
+# `${VAR}` placeholdery są podmieniane na rzeczywiste wartości.
+#
+# Ścieżki są wewnątrz kontenera (montowane z hosta przez compose volumes).
+
+server:
+  grpc_listen_addr: "0.0.0.0:5443"
+  rest_listen_addr: "0.0.0.0:55000"
+  tls_cert_path:    "/var/lib/scrooge/certs/server.pem"
+  tls_key_path:     "/var/lib/scrooge/certs/server.key"
+  ca_cert_path:     "/var/lib/scrooge/certs/ca.pem"
+  ca_key_path:      "/var/lib/scrooge/certs/ca.key"
+
+database:
+  # `postgres` to nazwa serwisu w docker-compose (DNS w bridge network).
+  url:      "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+  pool_max: 16
+
+syslog_forwarder:
+  enabled: false
+
+auth:
+  jwt_secret:             "${JWT_SECRET}"
+  access_token_ttl_secs:  3600
+  refresh_token_ttl_secs: 2592000
