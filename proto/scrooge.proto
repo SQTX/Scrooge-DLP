@@ -1,0 +1,371 @@
+// SPDX-License-Identifier: GPL-2.0-only
+//
+// ScroogeDLP - Data Loss Prevention system
+// Copyright (C) 2026 SQTX <sssqtx@gmail.com>
+//
+// This program is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License version 2 as
+// published by the Free Software Foundation.
+//
+// Schema kontraktu gRPC między agentem a managerem.
+
+syntax = "proto3";
+package scrooge.v1;
+
+// ════════════════════════════════════════════════════════════════════════════
+// AgentService — gRPC kontrakt agent ↔ manager
+// ════════════════════════════════════════════════════════════════════════════
+
+service AgentService {
+  // One-shot enrollment - agent przesyła token i CSR, manager zwraca
+  // podpisany certyfikat. Wywoływane tylko przy pierwszym uruchomieniu.
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+
+  // Persistent bidirectional stream - agent łączy się po enrollment,
+  // wysyła heartbeats/eventy, odbiera policy updates i komendy.
+  //
+  // Nazwa `Stream` zamiast `Connect` (brief draft) - tonic generuje
+  // `connect()` jako wbudowaną metodę klienta do otwierania kanału,
+  // co kolidowałoby z RPC method `connect()`.
+  rpc Stream(stream AgentMessage) returns (stream ManagerMessage);
+}
+
+// ── Enrollment ─────────────────────────────────────────────────────────────
+
+message EnrollRequest {
+  string enrollment_token = 1;
+  AgentInfo info = 2;
+  bytes csr_pem = 3;                       // PKCS#10 CSR
+}
+
+message EnrollResponse {
+  string agent_id = 1;                     // UUID przydzielony agentowi
+  bytes cert_pem = 2;                      // podpisany cert agenta
+  bytes ca_chain_pem = 3;                  // pełen chain CA do pinningu
+}
+
+message AgentInfo {
+  string hostname = 1;
+  string os = 2;                           // "linux" | "macos" | "windows"
+  string os_version = 3;
+  string arch = 4;                         // "x86_64" | "aarch64"
+  string agent_version = 5;
+  map<string, string> initial_tags = 6;
+}
+
+// ── Bidirectional streaming envelopes ──────────────────────────────────────
+
+message AgentMessage {
+  oneof payload {
+    Heartbeat heartbeat = 1;
+    Event event = 2;
+    EventBatch events = 3;
+    PolicyAck policy_ack = 4;
+    CommandResult command_result = 5;
+  }
+}
+
+message ManagerMessage {
+  oneof payload {
+    PolicyUpdate policy = 1;
+    Command command = 2;
+    HeartbeatAck heartbeat_ack = 3;
+  }
+}
+
+// ── Heartbeat / status ─────────────────────────────────────────────────────
+
+message Heartbeat {
+  int64 timestamp_ns = 1;                  // unix nanos UTC
+  AgentStatus status = 2;
+  repeated string active_policy_ids = 3;
+  map<string, uint32> active_policy_versions = 4;
+}
+
+message HeartbeatAck {
+  int64 timestamp_ns = 1;
+}
+
+message AgentStatus {
+  uint64 events_in_queue = 1;
+  uint64 events_dropped = 2;
+  bool offline_mode = 3;
+  double cpu_percent = 4;                  // średnio za ostatni interwał
+  uint64 mem_bytes = 5;                    // resident set size
+  uint64 disk_used_bytes = 6;              // local SQLite + quarantine
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Events
+// ════════════════════════════════════════════════════════════════════════════
+
+message EventBatch {
+  string batch_id = 1;                     // UUID dla idempotentcji manager-side
+  repeated Event events = 2;
+}
+
+message Event {
+  // Identyfikacja
+  string event_id = 1;                     // UUID
+  int64 timestamp_ns = 2;
+  string agent_id = 3;
+
+  // Klasyfikacja
+  EventType type = 4;
+  Severity severity = 5;
+  Direction direction = 6;
+
+  // Kontekst procesu / użytkownika (gdy dostępny)
+  string user_name = 7;                    // Linux: "user", Windows: "DOMAIN\\user"
+  uint32 process_id = 8;
+  string process_name = 9;
+
+  // Treść per-domena
+  oneof details {
+    FileEvent file = 10;
+    DeviceEvent device = 11;
+    ClipboardEvent clipboard = 12;
+    NetworkEvent network = 13;
+    ScreenEvent screen = 14;
+    ProcessEvent process = 15;
+  }
+
+  // Policy enforcement
+  string matched_policy_id = 30;
+  string matched_rule_id = 31;
+  Action action_taken = 32;
+  repeated Match matches = 33;
+  bool forward_to_siem = 34;
+}
+
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  // File system
+  FILE_CREATE = 10;
+  FILE_READ = 11;
+  FILE_WRITE = 12;
+  FILE_DELETE = 13;
+  FILE_RENAME = 14;
+  FILE_COPY = 15;
+  FILE_MOVE = 16;
+  // Device control
+  DEVICE_INSERT = 20;
+  DEVICE_REMOVE = 21;
+  DEVICE_MOUNT = 22;
+  DEVICE_WRITE = 23;
+  DEVICE_PRINT = 24;
+  // Clipboard / screen
+  CLIPBOARD_COPY = 30;
+  CLIPBOARD_PASTE = 31;
+  SCREEN_CAPTURE = 32;
+  // Network
+  NETWORK_CONNECT = 40;
+  NETWORK_UPLOAD = 41;
+  NETWORK_DOWNLOAD = 42;
+  // Process
+  PROCESS_START = 50;
+  PROCESS_EXIT = 51;
+  PROCESS_KILLED = 52;
+  // Meta
+  POLICY_VIOLATION = 90;
+  AGENT_INTERNAL = 99;
+}
+
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  LOW = 1;
+  MEDIUM = 2;
+  HIGH = 3;
+  CRITICAL = 4;
+}
+
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  INBOUND = 1;
+  OUTBOUND = 2;
+  INTERNAL = 3;
+}
+
+enum Action {
+  ACTION_UNSPECIFIED = 0;
+  LOG_ONLY = 1;
+  ALERT = 2;
+  WARN_USER = 3;
+  BLOCK = 4;
+  QUARANTINE = 5;
+  KILL_PROCESS = 6;
+  LOCK_WORKSTATION = 7;
+}
+
+// ── Event details ──────────────────────────────────────────────────────────
+
+message FileEvent {
+  string path = 1;
+  string old_path = 2;                     // dla rename/move
+  string destination_path = 3;             // dla copy/move
+  int64 size_bytes = 4;
+  bytes sha256 = 5;                        // 32 bajty raw, gdy classifier scan'ował
+  string mime_type = 6;
+  string file_extension = 7;
+}
+
+message DeviceEvent {
+  DeviceType type = 1;
+  string vendor_id = 2;
+  string product_id = 3;
+  string serial_number = 4;                // klucz dla whitelist
+  string device_instance_id = 5;           // Windows-style ID, opcjonalne na innych OS
+  string product_name = 6;
+  string mount_point = 7;                  // gdy mounted
+  uint64 capacity_bytes = 8;
+}
+
+enum DeviceType {
+  DEVICE_TYPE_UNSPECIFIED = 0;
+  USB_STORAGE = 1;
+  EXTERNAL_DISK = 2;
+  MTP = 3;
+  PRINTER = 4;
+  OPTICAL = 5;
+  FLOPPY = 6;
+  NETWORK_SHARE = 7;
+}
+
+message ClipboardEvent {
+  uint64 content_size = 1;
+  string content_preview = 2;              // sanitized snippet, max 256 chars
+  bytes content_hash = 3;                  // SHA-256, 32 bajty
+  string mime_type = 4;                    // "text/plain", "image/png", ...
+  string source_process_name = 5;
+  bool was_cleared = 6;                    // agent wyczyścił schowek po detekcji
+}
+
+message ScreenEvent {
+  ScreenCaptureMethod method = 1;
+  string tool_process_name = 2;
+  string tool_executable_path = 3;
+  bool was_blocked = 4;
+}
+
+enum ScreenCaptureMethod {
+  SCREEN_CAPTURE_METHOD_UNSPECIFIED = 0;
+  PRINT_SCREEN_KEY = 1;
+  SNIPPING_TOOL = 2;
+  THIRD_PARTY_TOOL = 3;
+  API_CALL = 4;
+}
+
+message NetworkEvent {
+  string remote_host = 1;                  // SNI/hostname jeśli dostępne
+  string remote_ip = 2;
+  uint32 remote_port = 3;
+  string protocol = 4;                     // "tls", "http", "ftp"
+  uint64 bytes_sent = 5;
+  uint64 bytes_received = 6;
+  CloudDestination cloud_classification = 7;
+  string local_process_name = 8;
+}
+
+enum CloudDestination {
+  CLOUD_DESTINATION_UNSPECIFIED = 0;
+  CLOUD_NONE = 1;
+  CLOUD_DROPBOX = 2;
+  CLOUD_GOOGLE_DRIVE = 3;
+  CLOUD_ONEDRIVE = 4;
+  CLOUD_WETRANSFER = 5;
+  CLOUD_AWS_S3 = 6;
+  CLOUD_AZURE_BLOB = 7;
+  CLOUD_GENERIC_STORAGE = 8;
+  CLOUD_EMAIL_SERVICE = 9;
+}
+
+message ProcessEvent {
+  uint32 process_id = 1;
+  uint32 parent_process_id = 2;
+  string executable_path = 3;
+  string command_line = 4;
+  string user_name = 5;
+  bytes executable_sha256 = 6;
+  int32 exit_code = 7;                     // dla PROCESS_EXIT
+}
+
+message Match {
+  string classifier_id = 1;
+  uint32 match_count = 2;
+  string sample_excerpt = 3;               // sanitized fragment, np. "**** **** **** 1234"
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Policy push
+// ════════════════════════════════════════════════════════════════════════════
+
+message PolicyUpdate {
+  repeated PolicyRef policies = 1;
+  // true: full snapshot (agent zastępuje wszystko)
+  // false: delta merge (dodaj/zaktualizuj, usuń wymienione w remove_policy_ids)
+  bool full_replace = 2;
+  repeated string remove_policy_ids = 3;
+}
+
+message PolicyRef {
+  string policy_id = 1;                    // = nazwa polityki w DB
+  uint32 version = 2;
+  bytes content_compiled = 3;              // msgpack-compiled forma
+  string content_hash = 4;                 // SHA-256 hex, do delta dedup
+  uint32 priority = 5;
+}
+
+message PolicyAck {
+  string policy_id = 1;
+  uint32 version = 2;
+  PolicyAckStatus status = 3;
+  string error_message = 4;                // dla *_FAILED
+}
+
+enum PolicyAckStatus {
+  POLICY_ACK_STATUS_UNSPECIFIED = 0;
+  APPLIED = 1;
+  VALIDATION_FAILED = 2;
+  RUNTIME_FAILED = 3;
+  REJECTED = 4;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Commands (manager → agent)
+// ════════════════════════════════════════════════════════════════════════════
+
+message Command {
+  string command_id = 1;                   // UUID, agent musi odpowiedzieć CommandResult
+  CommandType type = 2;
+  bytes payload = 3;                       // type-specific (msgpack)
+  int64 issued_at_ns = 4;
+  int64 deadline_ns = 5;                   // 0 = no deadline
+}
+
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  REFRESH_POLICIES = 1;
+  COLLECT_DIAGNOSTICS = 2;
+  UPDATE_TAGS = 3;
+  RESTART_AGENT = 4;
+  ROTATE_CERTIFICATE = 5;
+  CLEAR_QUARANTINE = 6;
+  TEST_CONNECTIVITY = 7;
+}
+
+message CommandResult {
+  string command_id = 1;
+  CommandResultStatus status = 2;
+  string output = 3;                       // human-readable
+  bytes payload = 4;                       // type-specific binary
+  string error_message = 5;
+  int64 completed_at_ns = 6;
+}
+
+enum CommandResultStatus {
+  COMMAND_RESULT_STATUS_UNSPECIFIED = 0;
+  SUCCESS = 1;
+  FAILURE = 2;
+  TIMEOUT = 3;
+  REFUSED = 4;
+}
