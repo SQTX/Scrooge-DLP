@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Dev config for `scrooge-manager`. Used by `make dev-manager`.
+#
+# Wszystkie ścieżki są relatywne do workspace root (gdzie odpalasz `make`).
+
+server:
+  grpc_listen_addr: "127.0.0.1:5443"
+  rest_listen_addr: "127.0.0.1:55000"
+  tls_cert_path:    "dev-certs/server.pem"
+  tls_key_path:     "dev-certs/server.key"
+  ca_cert_path:     "dev-certs/ca.pem"
+  ca_key_path:      "dev-certs/ca.key"
+
+database:
+  url:      "postgres://scrooge:scrooge-dev-password@localhost:5433/scrooge"
+  pool_max: 8
+
+# Domyślnie wyłączony zgodnie z briefem. Dla testów Wazuh - włącz tutaj.
+syslog_forwarder:
+  enabled: false
+
+auth:
+  # 64 znaki = 256 bitów. ZMIEŃ przed wyjściem na produkcję.
+  jwt_secret:               "dev-only-jwt-secret-DO-NOT-USE-IN-PRODUCTION-32chars-min!!"
+  access_token_ttl_secs:    3600
+  refresh_token_ttl_secs:   2592000  # 30 dni

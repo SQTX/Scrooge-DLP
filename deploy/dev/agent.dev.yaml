@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# Dev config for `scrooge-agent`. Używane przez `make dev-agent`.
+#
+# `enrollment_token` jest pusty — `make dev-agent` wstrzykuje go z
+# `dev-certs/enrollment-token.txt` przez env var `ENROLLMENT_TOKEN`.
+
+manager:
+  endpoint:         "localhost:5443"
+  enrollment_token: ""
+  verify_tls:       true
+  ca_cert_path:     "dev-certs/ca.pem"
+
+agent:
+  data_dir:                  "agent-data"
+  log_level:                 "info"
+  heartbeat_interval_secs:   10        # krótszy interwał dla dev (vs 30s w prod)

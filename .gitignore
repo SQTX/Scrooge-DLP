@@ -344,3 +344,8 @@ deploy/dev/*.utm/
 !tests/fixtures/test-ca.pem
 !tests/fixtures/test-cert.pem
 !tests/fixtures/test-key.pem
+# ── ScroogeDLP dev artifacts (wygenerowane przez make dev-*) ────────────────
+dev-certs/
+agent-data/
+*.cert
+agent.id

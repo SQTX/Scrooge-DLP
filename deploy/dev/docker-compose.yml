@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# ScroogeDLP - dev docker-compose: tylko PostgreSQL.
+# Manager + agent uruchamiane natywnie z `cargo run` (szybsza iteracja).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: scrooge-dev-postgres
+    environment:
+      POSTGRES_USER: scrooge
+      POSTGRES_PASSWORD: scrooge-dev-password
+      POSTGRES_DB: scrooge
+    ports:
+      # 5433 zamiast 5432 - na hoście pewnie chodzi lokalny Postgres
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - scrooge-dev-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "scrooge"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  scrooge-dev-pg-data:
