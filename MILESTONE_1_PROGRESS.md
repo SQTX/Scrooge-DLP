@@ -2,8 +2,9 @@
 
 > **Stan na:** 2026-05-12
 > **Branch:** `main` (worktree `claude/unruffled-jennings-c55c25` przed merge'm)
-> **Status:** ✅ **MILESTONE 1 COMPLETE** + bonusy + **Sub-faza 1A** (Release CI) + **Sub-faza 1B** (Install API) + **Sub-faza 1D** (Dashboard wizard) **COMPLETE**.
-> **Aktualnie:** Wazuh-flow domknięty backendowo + UI-owo dla Linux. Otwarta Sub-faza 1C: macOS + Windows installer **przez curl-flow** (one-liner, nie klikane `.pkg`/`.msi`) — projekt jest GPLv2 open-source, **NIE kupujemy code signing**. Plus E2E test na żywym Ubuntu.
+> **Status:** ✅ **MILESTONE 1 COMPLETE** + bonusy + **Cała Faza 1 (Wazuh-flow Distribution)** ukończona: 1A (Release CI) + 1B (Install API Linux) + 1C (macOS + Windows installer) + 1D (Dashboard wizard).
+> **Aktualnie:** Pełna architektura agentowa cross-platform gotowa od kodu. Otwarte tylko **manualne E2E** (curl-flow trzeba odpalić na czystych VM-kach: Ubuntu, macOS host, Windows VM) — to verification, nie implementation.
+> **Następnie:** Phase 2 / Milestone 2 — polityki DLP w YAML (`scrooge-policy` crate + REST CRUD + push do agentów).
 
 ---
 
@@ -46,6 +47,47 @@ Wszystkie 12 kroków zaimplementowane, zmergowane na `main`, zweryfikowane lokal
 | `40af82a` | ROADMAP.md — pełna mapa Phase 0-6 |
 | `d19c652` | **Sub-faza 1A**: release CI workflow + .deb/.rpm metadata |
 | `c8ca537` + `c1fb049` | fixy cargo-generate-rpm (package path + asset paths) |
+
+## Sub-faza 1C — COMPLETE ✅
+
+macOS + Windows installer przez curl-flow (bez code signing — patrz
+`memory/project_distribution_policy.md`).
+
+- **`TargetOs` enum** w `install.rs` — central registry: każdy wariant wie
+  swój template, MIME, ścieżkę endpointa i format one-linera. Trzy thin
+  handlery wrappują wspólny `render_for()` helper.
+- **`GET /api/v1/install-macos.sh`** — bash. `uname -m` → tarball z
+  GitHub Releases (`scrooge-agent-{x86_64|aarch64}-apple-darwin.tar.gz`),
+  rozpakuje do `/usr/local/bin/scrooge-agent`, inline `agent.yaml` +
+  `ca.pem` do `/usr/local/etc/scrooge/`, launchd plist
+  `/Library/LaunchDaemons/com.sqtx.scrooge-agent.plist` + `launchctl
+  bootstrap`. Idempotent (jeśli service istnieje, najpierw `launchctl
+  bootout`).
+- **`GET /api/v1/install.ps1`** — PowerShell 5.1+ `#Requires
+  -RunAsAdministrator`. `Invoke-WebRequest` zip, `Expand-Archive` do
+  `C:\Program Files\ScroogeDLP\`, agent.yaml + ca.pem w
+  `C:\ProgramData\ScroogeDLP\` (UTF-8 bez BOM), `New-Service` z
+  `-StartupType Automatic` + `sc.exe failure` (restart po 60s, max 3
+  próby). Idempotent (Stop-Service + sc.exe delete przed re-install).
+- **POST /agents/install** — install_command per OS:
+  - Linux/macOS: `curl -fsSL '…' | sudo bash`
+  - Windows: `iwr -UseBasicParsing '…' | iex`
+- **Dashboard wizard** — macOS/Windows odblokowane w dropdownie. Stage 2
+  pokazuje per-OS hint (Windows: „wklej w PowerShell (Administrator)").
+- **4 nowe testy** (lacznie 23): macos/windows render, one_liner format,
+  parse aliasów (`darwin` → `MacOs`).
+
+**Smoke E2E** (curl na Macu): wszystkie 3 endpointy zwracają poprawny
+content-type, no leftover placeholderów. `bash -n install-macos.sh` valid.
+PowerShell parse niezweryfikowany — wymagałoby `brew install --cask
+powershell`, do zrobienia ręcznie razem z faktycznym test'em na czystym
+Windowsie.
+
+**Co nie jest objęte tym commitem** (osobne sub-fazy / Phase 5):
+- Uninstall scripts (`uninstall-{linux,macos,windows}.sh`/.ps1)
+- macOS ARM Windows binarka (release.yml tylko x86_64-pc-windows-msvc)
+- Auto-update agentów
+- Code signing — celowo pominięte na MVP.
 
 ## Sub-faza 1D — COMPLETE ✅
 

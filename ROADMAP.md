@@ -60,31 +60,22 @@ sam się instaluje i zarejestruje. Tak jak Wazuh.
 - [x] Skrypt obsługuje Debian/Ubuntu (.deb) i RHEL-family (.rpm) — detect z `/etc/os-release`
 - [ ] **Pełen E2E**: faktyczne `curl … | sudo bash` na czystym Ubuntu (lokalnie tylko bash -n syntax check)
 
-### Sub-faza 1C — macOS / Windows installer (curl-flow, NO code signing)
+### Sub-faza 1C — macOS / Windows installer (curl-flow, NO code signing) ✅ DONE
 
 > Projekt jest GPLv2 open-source — nie kupujemy Apple Developer ID ($99/rok)
 > ani Windows Code Signing Cert ($200-700/rok). Zamiast klikanych `.pkg`/`.msi`
 > dystrybuujemy przez **one-liner**: `curl install.sh | sudo bash`. Quarantine
 > xattr / SmartScreen patrzą tylko na pliki pobrane przez browser/Explorer —
-> binarka skopiowana przez curl/wget i uruchomiona przez launchd/sc.exe nie
+> binarka skopiowana przez curl/iwr i uruchomiona przez launchd/sc.exe nie
 > jest blokowana.
 
-- **Linux installer już działa** (`/api/v1/install.sh`, Sub-faza 1B). To źródło prawdy dla logiki.
-- [ ] Rozszerz handler `install::script` o `target_os=macos` — nowy template `install_macos.sh.tpl`:
-  - Detect arch (`uname -m` → `x86_64` lub `arm64`)
-  - Pobierz tarball z GitHub Releases (`scrooge-agent-{x86_64|aarch64}-apple-darwin.tar.gz`)
-  - Rozpakuj do `/usr/local/bin/scrooge-agent`
-  - Stwórz launchd plist `/Library/LaunchDaemons/com.sqtx.scrooge-agent.plist`
-  - `launchctl load -w` plist
-- [ ] Rozszerz o `target_os=windows` — nowy template `install_windows.ps1.tpl`:
-  - PowerShell, sprawdź `[Environment]::Is64BitOperatingSystem`
-  - `Invoke-WebRequest` zipa z GitHub Releases
-  - `Expand-Archive` do `C:\Program Files\ScroogeDLP\`
-  - `New-Service` (lub `sc.exe create`) jako Windows service, auto-start
-  - One-liner: `iwr -UseBasicParsing https://.../install.ps1?token=... | iex`
-- [ ] POST `/api/v1/agents/install` — zdejmij `disabled` z `macos`/`windows` w response gdy templaty są gotowe; dashboard wizard sam się obudzi
-- [ ] Pełen E2E na czystym macOS host + Windows VM (UTM jest na razie tylko Linux)
-- [ ] README sekcja „Why no signed installers" — żeby user nie pytał
+- [x] `TargetOs` enum w `install.rs` — central registry per OS (template + MIME + path + one-liner format)
+- [x] `GET /api/v1/install-macos.sh` — bash, detect `uname -m`, tarball z GH Releases, launchd plist `com.sqtx.scrooge-agent`, `launchctl bootstrap`
+- [x] `GET /api/v1/install.ps1` — PowerShell `#Requires -RunAsAdministrator`, `iwr` zip, `Expand-Archive`, `New-Service` + `sc.exe failure` (restart-on-failure)
+- [x] `POST /agents/install` zwraca `install_command` per OS (`curl | sudo bash` vs `iwr | iex`)
+- [x] Dashboard wizard — unlock macOS/Windows w dropdownie, per-OS hint w stage 2
+- [x] 4 nowe unit testy (macos/windows render, one-liner format, parse aliases — `darwin` jako alias dla `macos`)
+- [ ] **E2E test** — manualne `curl … | sudo bash` na czystym macOS host + `iwr … | iex` na czystym Windows VM (sam Mac dev mam, Windows VM trzeba postawić)
 
 ### Sub-faza 1D — Dashboard wizard ✅ DONE
 - [x] „Add agent" modal: dropdown OS (linux aktywny; macos/windows disabled) + opcjonalny description
