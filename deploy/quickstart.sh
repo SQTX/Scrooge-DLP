@@ -67,19 +67,43 @@ ok "image built"
 # 3. CA + server cert (chyba że już są)
 # ──────────────────────────────────────────────────────────────────────────
 mkdir -p "$CERTS_DIR"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Publiczny adres managera (gdzie agenci sie laczy).
+# Akceptuje hostname (FQDN/short) albo IP. Trafia do cert.SAN i do
+# `manager.yaml` (server.public_*) — bez tego install API zwroci 503.
+# ──────────────────────────────────────────────────────────────────────────
+if [ -z "${MANAGER_PUBLIC_ADDR:-}" ]; then
+    DEFAULT_ADDR="$(hostname -f 2>/dev/null || hostname)"
+    read -r -p "  publiczny adres managera (hostname lub IP) [$DEFAULT_ADDR]: " MANAGER_PUBLIC_ADDR
+    MANAGER_PUBLIC_ADDR="${MANAGER_PUBLIC_ADDR:-$DEFAULT_ADDR}"
+fi
+
+# Czy `MANAGER_PUBLIC_ADDR` jest IP czy hostname'm? SAN ma osobne IP: i DNS:.
+if [[ "$MANAGER_PUBLIC_ADDR" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    SAN_ENTRY="$MANAGER_PUBLIC_ADDR"  # init-ca wykryje IP po format'cie
+    PUBLIC_KIND="IP"
+else
+    SAN_ENTRY="$MANAGER_PUBLIC_ADDR"
+    PUBLIC_KIND="DNS"
+fi
+
+# Schema dla REST URL. http jeśli IP, https jeśli FQDN (zalozenie: reverse
+# proxy obsluguje TLS dla domeny). Override przez REST_SCHEMA.
+REST_SCHEMA="${REST_SCHEMA:-$([ "$PUBLIC_KIND" = "IP" ] && echo http || echo https)}"
+
 if [ -f "$CERTS_DIR/ca.pem" ] && [ -f "$CERTS_DIR/server.pem" ]; then
     warn "CA + server cert już istnieją w $CERTS_DIR — używam ich (delete i odpal ponownie żeby zregenerować)"
 else
     say "generating CA + manager server cert via scroogectl init-ca…"
-    HOSTNAME_VALUE="${MANAGER_HOSTNAME:-$(hostname -f 2>/dev/null || hostname)}"
     docker run --rm \
         -v "$CERTS_DIR:/out" \
         scrooge-manager:local \
         scroogectl init-ca \
             --output /out \
-            --server-cn "$HOSTNAME_VALUE" \
-            --san "localhost,scrooge-manager,127.0.0.1,$HOSTNAME_VALUE"
-    ok "certs w $CERTS_DIR"
+            --server-cn "$MANAGER_PUBLIC_ADDR" \
+            --san "localhost,scrooge-manager,127.0.0.1,$SAN_ENTRY"
+    ok "certs w $CERTS_DIR (CN=$MANAGER_PUBLIC_ADDR, SAN += $PUBLIC_KIND:$SAN_ENTRY)"
 fi
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -112,14 +136,21 @@ fi
 say "rendering manager.yaml z manager.yaml.example…"
 TEMPLATE="$DOCKER_DIR/manager.yaml.example"
 TARGET="$DOCKER_DIR/manager.yaml"
+PUBLIC_GRPC="${MANAGER_PUBLIC_ADDR}:${MANAGER_GRPC_PORT:-5443}"
+PUBLIC_REST="${REST_SCHEMA}://${MANAGER_PUBLIC_ADDR}:${MANAGER_REST_PORT:-55000}"
+AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-v0.1.0-rc3}"
+
 sed \
     -e "s|\${POSTGRES_USER}|${POSTGRES_USER}|g" \
     -e "s|\${POSTGRES_PASSWORD}|${POSTGRES_PASSWORD}|g" \
     -e "s|\${POSTGRES_DB}|${POSTGRES_DB}|g" \
     -e "s|\${JWT_SECRET}|${JWT_SECRET}|g" \
+    -e "s|public_grpc_endpoint: \".*\"|public_grpc_endpoint: \"${PUBLIC_GRPC}\"|" \
+    -e "s|public_rest_base_url: \".*\"|public_rest_base_url: \"${PUBLIC_REST}\"|" \
+    -e "s|agent_release_tag:    \".*\"|agent_release_tag:    \"${AGENT_RELEASE_TAG}\"|" \
     "$TEMPLATE" > "$TARGET"
 chmod 600 "$TARGET"
-ok "manager.yaml gotowy"
+ok "manager.yaml gotowy (public_grpc=$PUBLIC_GRPC, public_rest=$PUBLIC_REST, release=$AGENT_RELEASE_TAG)"
 
 # ──────────────────────────────────────────────────────────────────────────
 # 5. Up
