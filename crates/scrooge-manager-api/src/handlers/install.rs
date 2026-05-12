@@ -3,15 +3,21 @@
 // ScroogeDLP - Data Loss Prevention system
 // Copyright (C) 2026 SQTX <sssqtx@gmail.com>
 
-//! Wazuh-flow install API (Sub-faza 1B):
+//! Wazuh-flow install API:
 //!
-//! - `POST /api/v1/agents/install` — admin generuje single-use enrollment
-//!   token (24h TTL, max_uses=1) i dostaje one-liner do skopiowania na
-//!   endpoincie.
-//! - `GET /api/v1/install.sh?token=XYZ` — server-rendered bash, wstrzykuje
-//!   gRPC endpoint, root CA i token; pobiera `.deb`/`.rpm` z GitHub Releases
-//!   i podpina agenta pod systemd. Public (bez Bearer) — autoryzacja idzie
-//!   przez sam enrollment token.
+//! - `POST /api/v1/agents/install` (admin) — generuje single-use enrollment
+//!   token (24h, max_uses=1) i zwraca gotowy one-liner per target_os.
+//! - `GET /api/v1/install.sh?token=…`        — bash installer dla Linuxa
+//!   (Debian/Ubuntu/RHEL family). Sub-faza 1B.
+//! - `GET /api/v1/install-macos.sh?token=…`  — bash installer dla macOS
+//!   (curl-flow, brak code signing — patrz `project_distribution_policy`).
+//!   Sub-faza 1C.
+//! - `GET /api/v1/install.ps1?token=…`       — PowerShell installer dla
+//!   Windows (curl-flow, brak code signing). Sub-faza 1C.
+//!
+//! Wszystkie `GET /install*` są publiczne — autoryzację zapewnia sam
+//! enrollment token (sanity-check, że istnieje i nie wygasł). uses_count
+//! inkrementuje wyłącznie gRPC `Enroll`.
 
 use std::path::PathBuf;
 
@@ -33,16 +39,16 @@ use crate::{
     state::{AppState, InstallConfig},
 };
 
-/// Walidowane target_os. Renderowanie installer'a per OS dochodzi w
-/// kolejnych krokach Sub-fazy 1B/1C.
-const SUPPORTED_OS: &[&str] = &["linux", "macos", "windows"];
+// ────────────────────────────────────────────────────────────────────────────
+// Stałe
+// ────────────────────────────────────────────────────────────────────────────
 
 /// Stały TTL token'a install. Krótsze niż domyślne CLI (30 dni), bo zakładamy
 /// że admin wcisnął „Add agent" i zaraz robi instalację.
 const INSTALL_TOKEN_TTL_HOURS: i64 = 24;
 
-/// Base URL dla `.deb`/`.rpm` na GitHub Releases. Hardcoded — repo jest
-/// publiczne, więc nie wystawiamy tego jako pole configu.
+/// Base URL dla `.deb`/`.rpm`/tarball/zip na GitHub Releases. Hardcoded —
+/// repo jest publiczne, więc nie wystawiamy tego jako pole configu.
 const RELEASES_BASE_URL: &str = "https://github.com/SQTX/Scrooge-DLP/releases/download";
 
 /// Package version (workspace `Cargo.toml`) + revision `1` z `cargo-deb`
@@ -50,9 +56,79 @@ const RELEASES_BASE_URL: &str = "https://github.com/SQTX/Scrooge-DLP/releases/do
 /// skrypcie (`scrooge-agent_{PACKAGE_VERSION}_amd64.deb`).
 const PACKAGE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "-1");
 
-/// Template Linux installer'a — Debian/Ubuntu + RHEL-family. Renderowane
-/// per request przez podmianę `{{PLACEHOLDER}}` tokenów.
 const LINUX_TEMPLATE: &str = include_str!("install_linux.sh.tpl");
+const MACOS_TEMPLATE: &str = include_str!("install_macos.sh.tpl");
+const WINDOWS_TEMPLATE: &str = include_str!("install_windows.ps1.tpl");
+
+// ────────────────────────────────────────────────────────────────────────────
+// TargetOs
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Walidowany target OS dla install API. Każdy wariant zna swój template,
+/// MIME type i format one-liner'a.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TargetOs {
+    Linux,
+    MacOs,
+    Windows,
+}
+
+impl TargetOs {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw.to_ascii_lowercase().as_str() {
+            "linux" => Some(Self::Linux),
+            "macos" | "darwin" => Some(Self::MacOs),
+            "windows" => Some(Self::Windows),
+            _ => None,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Linux => "linux",
+            Self::MacOs => "macos",
+            Self::Windows => "windows",
+        }
+    }
+
+    fn template(self) -> &'static str {
+        match self {
+            Self::Linux => LINUX_TEMPLATE,
+            Self::MacOs => MACOS_TEMPLATE,
+            Self::Windows => WINDOWS_TEMPLATE,
+        }
+    }
+
+    fn content_type(self) -> &'static str {
+        match self {
+            Self::Linux | Self::MacOs => "text/x-shellscript; charset=utf-8",
+            // PowerShell uses `application/x-powershell`; `iwr | iex` ignoruje
+            // Content-Type, ale uczciwie deklarujemy.
+            Self::Windows => "application/x-powershell; charset=utf-8",
+        }
+    }
+
+    /// Ścieżka do endpointa renderującego dla tego OS (bez query string).
+    fn script_path(self) -> &'static str {
+        match self {
+            Self::Linux => "/api/v1/install.sh",
+            Self::MacOs => "/api/v1/install-macos.sh",
+            Self::Windows => "/api/v1/install.ps1",
+        }
+    }
+
+    /// Renderuje one-liner gotowy do skopiowania. Linux/macOS używają bash'a,
+    /// Windows — PowerShell przez `iwr … | iex`.
+    fn one_liner(self, base: &str, token: &str) -> String {
+        let path = self.script_path();
+        match self {
+            Self::Linux | Self::MacOs => {
+                format!("curl -fsSL '{base}{path}?token={token}' | sudo bash")
+            },
+            Self::Windows => format!("iwr -UseBasicParsing '{base}{path}?token={token}' | iex"),
+        }
+    }
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/agents/install
@@ -60,8 +136,7 @@ const LINUX_TEMPLATE: &str = include_str!("install_linux.sh.tpl");
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct InstallRequest {
-    /// `linux` | `macos` | `windows`. Renderowanie installer'a per OS dochodzi
-    /// w kolejnych krokach — w MVP token jest agnostic.
+    /// `linux` | `macos` | `windows`.
     pub target_os: String,
     /// Opcjonalny opis (np. `laptop-jan-marketing`). Trafia do
     /// `enrollment_tokens.description` jako pomoc audytowa.
@@ -102,12 +177,12 @@ pub async fn create(
 ) -> ApiResult<Json<InstallResponse>> {
     claims.require_admin()?;
 
-    let os = req.target_os.to_lowercase();
-    if !SUPPORTED_OS.contains(&os.as_str()) {
-        return Err(ApiError::BadRequest(format!(
-            "target_os must be one of: linux, macos, windows (got: {os})"
-        )));
-    }
+    let os = TargetOs::parse(&req.target_os).ok_or_else(|| {
+        ApiError::BadRequest(format!(
+            "target_os must be one of: linux, macos, windows (got: {})",
+            req.target_os
+        ))
+    })?;
 
     let created_by: Uuid = claims
         .sub
@@ -116,7 +191,7 @@ pub async fn create(
 
     let description = req
         .description
-        .unwrap_or_else(|| format!("install API ({os}) by {}", claims.username));
+        .unwrap_or_else(|| format!("install API ({}) by {}", os.label(), claims.username));
 
     let raw = Uuid::new_v4().to_string();
     let hash = sha256_hex(&raw);
@@ -140,11 +215,11 @@ pub async fn create(
         .install_config()
         .public_rest_base_url
         .as_ref()
-        .map(|base| format!("curl -fsSL '{base}/api/v1/install.sh?token={raw}' | sudo bash"));
+        .map(|base| os.one_liner(base, &raw));
 
     tracing::info!(
         user = %claims.username,
-        target_os = %os,
+        target_os = os.label(),
         expires_at = %expires_at,
         "install enrollment token issued"
     );
@@ -157,7 +232,7 @@ pub async fn create(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// GET /api/v1/install.sh
+// GET handlery per OS — wszystkie wrappy nad `render_for(os, …)`
 // ────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -165,11 +240,7 @@ pub struct InstallScriptQuery {
     pub token: String,
 }
 
-/// `GET /api/v1/install.sh?token=XYZ` — server-rendered bash installer.
-///
-/// Endpoint **nie inkrementuje** `uses_count` — robi to gRPC `Enroll`. Tutaj
-/// tylko sanity-check że token istnieje i nie wygasł, żeby nie wystawiać
-/// skryptu który i tak będzie odrzucony przy enrollment.
+/// `GET /api/v1/install.sh?token=XYZ` — server-rendered bash installer (Linux).
 #[utoipa::path(
     get,
     path = "/api/v1/install.sh",
@@ -177,7 +248,7 @@ pub struct InstallScriptQuery {
         ("token" = String, Query, description = "Single-use enrollment token (UUID v4) z POST /agents/install"),
     ),
     responses(
-        (status = 200, description = "Bash installer", content_type = "text/x-shellscript"),
+        (status = 200, description = "Bash installer dla Linux", content_type = "text/x-shellscript"),
         (status = 401, description = "Unknown/expired token", body = crate::error::ErrorBody),
         (status = 503, description = "Manager nie ma kompletnego install configu", body = crate::error::ErrorBody),
     ),
@@ -187,12 +258,83 @@ pub async fn script(
     State(state): State<AppState>,
     Query(q): Query<InstallScriptQuery>,
 ) -> ApiResult<Response> {
-    let install = state.install_config();
-    let ctx = ScriptContext::from_install_config(install)?;
+    render_for(&state, TargetOs::Linux, &q.token).await
+}
 
-    // Sanity check tokena — czy istnieje i nie expired. uses_count
-    // przekraczać może tylko Enroll.
-    let token_hash = sha256_hex(&q.token);
+/// `GET /api/v1/install-macos.sh?token=XYZ` — bash installer dla macOS
+/// (curl-flow, brak code signing).
+#[utoipa::path(
+    get,
+    path = "/api/v1/install-macos.sh",
+    params(
+        ("token" = String, Query, description = "Single-use enrollment token (UUID v4)"),
+    ),
+    responses(
+        (status = 200, description = "Bash installer dla macOS", content_type = "text/x-shellscript"),
+        (status = 401, description = "Unknown/expired token", body = crate::error::ErrorBody),
+        (status = 503, description = "Manager nie ma kompletnego install configu", body = crate::error::ErrorBody),
+    ),
+    tag = "install"
+)]
+pub async fn script_macos(
+    State(state): State<AppState>,
+    Query(q): Query<InstallScriptQuery>,
+) -> ApiResult<Response> {
+    render_for(&state, TargetOs::MacOs, &q.token).await
+}
+
+/// `GET /api/v1/install.ps1?token=XYZ` — PowerShell installer dla Windows
+/// (curl-flow, brak code signing).
+#[utoipa::path(
+    get,
+    path = "/api/v1/install.ps1",
+    params(
+        ("token" = String, Query, description = "Single-use enrollment token (UUID v4)"),
+    ),
+    responses(
+        (status = 200, description = "PowerShell installer dla Windows", content_type = "application/x-powershell"),
+        (status = 401, description = "Unknown/expired token", body = crate::error::ErrorBody),
+        (status = 503, description = "Manager nie ma kompletnego install configu", body = crate::error::ErrorBody),
+    ),
+    tag = "install"
+)]
+pub async fn script_windows(
+    State(state): State<AppState>,
+    Query(q): Query<InstallScriptQuery>,
+) -> ApiResult<Response> {
+    render_for(&state, TargetOs::Windows, &q.token).await
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Wspólny renderer
+// ────────────────────────────────────────────────────────────────────────────
+
+async fn render_for(state: &AppState, os: TargetOs, token: &str) -> ApiResult<Response> {
+    let ctx = ScriptContext::from_install_config(state.install_config())?;
+    validate_token(state, token).await?;
+
+    let ca_pem = std::fs::read_to_string(&ctx.ca_cert_path).map_err(|e| {
+        ApiError::Internal(format!(
+            "cannot read CA cert at {}: {e}",
+            ctx.ca_cert_path.display()
+        ))
+    })?;
+
+    let body = render_install_script(os.template(), &ctx, token, ca_pem.trim_end());
+
+    tracing::info!(
+        target_os = os.label(),
+        release_tag = %ctx.release_tag,
+        "rendered install script"
+    );
+
+    Ok(([(header::CONTENT_TYPE, os.content_type())], body).into_response())
+}
+
+/// Token sanity check — czy istnieje i nie expired. uses_count
+/// inkrementuje wyłącznie Enroll (RPC).
+async fn validate_token(state: &AppState, token: &str) -> ApiResult<()> {
+    let token_hash = sha256_hex(token);
     let row: Option<(Option<DateTime<Utc>>,)> =
         sqlx::query_as("SELECT expires_at FROM enrollment_tokens WHERE token_hash = $1")
             .bind(&token_hash)
@@ -204,27 +346,7 @@ pub async fn script(
             return Err(ApiError::InvalidToken);
         }
     }
-
-    let ca_pem = std::fs::read_to_string(&ctx.ca_cert_path).map_err(|e| {
-        ApiError::Internal(format!(
-            "cannot read CA cert at {}: {e}",
-            ctx.ca_cert_path.display()
-        ))
-    })?;
-
-    let body = render_install_script(LINUX_TEMPLATE, &ctx, &q.token, ca_pem.trim_end());
-
-    tracing::info!(
-        target_os = "linux",
-        release_tag = %ctx.release_tag,
-        "rendered install.sh"
-    );
-
-    Ok((
-        [(header::CONTENT_TYPE, "text/x-shellscript; charset=utf-8")],
-        body,
-    )
-        .into_response())
+    Ok(())
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -304,21 +426,79 @@ mod tests {
         }
     }
 
+    fn assert_no_placeholders(s: &str, label: &str) {
+        assert!(!s.contains("{{"), "leftover placeholder in {label}: {s}");
+    }
+
     #[test]
-    fn renders_all_placeholders() {
+    fn linux_template_renders_all_placeholders() {
         let out = render_install_script(
             LINUX_TEMPLATE,
             &dummy_ctx(),
             "TEST-TOKEN-1234",
             "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----",
         );
-        assert!(!out.contains("{{"), "leftover placeholder: {out}");
+        assert_no_placeholders(&out, "linux");
         assert!(out.contains("mgr.example.com:5443"));
-        assert!(out.contains("https://mgr.example.com"));
         assert!(out.contains("TEST-TOKEN-1234"));
         assert!(out.contains("v0.1.0-rc3"));
-        assert!(out.contains("-----BEGIN CERTIFICATE-----"));
         assert!(out.contains(PACKAGE_VERSION));
+    }
+
+    #[test]
+    fn macos_template_renders_all_placeholders() {
+        let out = render_install_script(
+            MACOS_TEMPLATE,
+            &dummy_ctx(),
+            "MAC-TOKEN-5678",
+            "-----BEGIN CERTIFICATE-----\nmac-fake\n-----END CERTIFICATE-----",
+        );
+        assert_no_placeholders(&out, "macos");
+        assert!(out.contains("mgr.example.com:5443"));
+        assert!(out.contains("MAC-TOKEN-5678"));
+        assert!(out.contains("apple-darwin"));
+        assert!(out.contains("launchctl"));
+    }
+
+    #[test]
+    fn windows_template_renders_all_placeholders() {
+        let out = render_install_script(
+            WINDOWS_TEMPLATE,
+            &dummy_ctx(),
+            "WIN-TOKEN-9999",
+            "-----BEGIN CERTIFICATE-----\nwin-fake\n-----END CERTIFICATE-----",
+        );
+        assert_no_placeholders(&out, "windows");
+        assert!(out.contains("mgr.example.com:5443"));
+        assert!(out.contains("WIN-TOKEN-9999"));
+        assert!(out.contains("pc-windows-msvc"));
+        assert!(out.contains("New-Service") || out.contains("sc.exe"));
+    }
+
+    #[test]
+    fn one_liner_per_os() {
+        let base = "https://mgr.example.com";
+        let tok = "abc";
+        let lin = TargetOs::Linux.one_liner(base, tok);
+        let mac = TargetOs::MacOs.one_liner(base, tok);
+        let win = TargetOs::Windows.one_liner(base, tok);
+
+        assert!(lin.starts_with("curl"));
+        assert!(lin.contains("/install.sh"));
+        assert!(mac.starts_with("curl"));
+        assert!(mac.contains("/install-macos.sh"));
+        assert!(win.starts_with("iwr"));
+        assert!(win.contains("/install.ps1"));
+        assert!(win.contains("| iex"));
+    }
+
+    #[test]
+    fn target_os_parse_accepts_aliases() {
+        assert_eq!(TargetOs::parse("Linux"), Some(TargetOs::Linux));
+        assert_eq!(TargetOs::parse("MACOS"), Some(TargetOs::MacOs));
+        assert_eq!(TargetOs::parse("darwin"), Some(TargetOs::MacOs));
+        assert_eq!(TargetOs::parse("Windows"), Some(TargetOs::Windows));
+        assert_eq!(TargetOs::parse("freebsd"), None);
     }
 
     #[test]

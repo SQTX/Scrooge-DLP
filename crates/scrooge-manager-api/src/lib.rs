@@ -57,6 +57,8 @@ pub fn router(state: AppState) -> Router {
         .route("/agents", get(handlers::agents::list))
         .route("/agents/install", post(handlers::install::create))
         .route("/install.sh", get(handlers::install::script))
+        .route("/install-macos.sh", get(handlers::install::script_macos))
+        .route("/install.ps1", get(handlers::install::script_windows))
         .route("/dashboard/config", get(handlers::dashboard::config))
         .with_state(state.clone());
 
@@ -127,6 +129,8 @@ impl Modify for SecurityAddon {
         handlers::agents::list,
         handlers::install::create,
         handlers::install::script,
+        handlers::install::script_macos,
+        handlers::install::script_windows,
         handlers::dashboard::config,
     ),
     components(schemas(
