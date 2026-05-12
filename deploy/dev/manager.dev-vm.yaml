@@ -14,6 +14,10 @@ server:
   tls_key_path:     "dev-certs/server.key"
   ca_cert_path:     "dev-certs/ca.pem"
   ca_key_path:      "dev-certs/ca.key"
+  # IP Maca w UTM Shared Network — agent w VM uderza tu zarowno przez gRPC,
+  # jak i przez install API. Zmien gdy uzywasz innej sieci VM.
+  public_grpc_endpoint: "192.168.64.1:5443"
+  public_rest_base_url: "http://192.168.64.1:55000"
 
 database:
   url:      "postgres://scrooge:scrooge-dev-password@localhost:5433/scrooge"

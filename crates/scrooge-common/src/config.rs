@@ -126,6 +126,20 @@ pub struct ManagerServerConfig {
 
     pub ca_cert_path: String,
     pub ca_key_path: String,
+
+    /// Publiczny gRPC endpoint (`host:port`) wpisywany w `agent.yaml` przez
+    /// `/api/v1/install.sh`. Wymagany tylko gdy używasz install API — bez
+    /// niego endpoint zwraca 503 z opisem co dodać do configu. W dev
+    /// wystarczy `127.0.0.1:5443`, w produkcji za reverse proxy → publiczny
+    /// FQDN agenta.
+    #[serde(default)]
+    pub public_grpc_endpoint: Option<String>,
+
+    /// Publiczny base URL REST API (`https://manager.example.com`) bez
+    /// trailing slash. Wstrzykiwany w one-liner `curl -fsSL {base}/install.sh
+    /// | sudo bash`. Wymagany tylko gdy używasz install API.
+    #[serde(default)]
+    pub public_rest_base_url: Option<String>,
 }
 
 /// Sekcja `database:` — PostgreSQL.

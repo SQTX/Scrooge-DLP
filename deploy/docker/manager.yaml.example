@@ -13,6 +13,15 @@ server:
   tls_key_path:     "/var/lib/scrooge/certs/server.key"
   ca_cert_path:     "/var/lib/scrooge/certs/ca.pem"
   ca_key_path:      "/var/lib/scrooge/certs/ca.key"
+  # Publiczne adresy widziane przez agenty / instalator. WYMAGANE gdy
+  # uzywasz install API (POST /api/v1/agents/install + /install.sh). Bez
+  # tych pol install API odpowie 503 z opisem co dodac.
+  #
+  # public_grpc_endpoint: gdzie agent laczy sie po gRPC (host:port; FQDN
+  # musi byc w cert.SAN). public_rest_base_url: gdzie installer pobiera
+  # sam siebie (`curl -fsSL {base}/api/v1/install.sh ...`).
+  public_grpc_endpoint: "manager.example.com:5443"
+  public_rest_base_url: "https://manager.example.com"
 
 database:
   # `postgres` to nazwa serwisu w docker-compose (DNS w bridge network).

@@ -10,6 +10,9 @@ server:
   tls_key_path:     "dev-certs/server.key"
   ca_cert_path:     "dev-certs/ca.pem"
   ca_key_path:      "dev-certs/ca.key"
+  # Publiczne adresy dla install API (Sub-faza 1B). W dev wskazuja loopback.
+  public_grpc_endpoint: "127.0.0.1:5443"
+  public_rest_base_url: "http://127.0.0.1:55000"
 
 database:
   url:      "postgres://scrooge:scrooge-dev-password@localhost:5433/scrooge"
