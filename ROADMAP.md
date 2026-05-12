@@ -32,13 +32,13 @@ embedded dashboard. Nie ma jeszcze funkcji DLP samych w sobie.
 
 ---
 
-## Phase 1: Wazuh-flow Distribution (NEXT)
+## Phase 1: Wazuh-flow Distribution (W TRAKCIE — 1A done)
 
 Cel: instalacja agenta przez **jeden one-liner** — admin klika „Add agent"
 w dashboardzie, dostaje `curl ... | sudo bash`, klejsze na końcówce, agent
 sam się instaluje i zarejestruje. Tak jak Wazuh.
 
-### Sub-faza 1A — Release CI pipeline
+### Sub-faza 1A — Release CI pipeline ✅ DONE
 - [x] Utwórz `.github/workflows/release.yml` (trigger: tag `v*`)
 - [x] Matrix build: Linux x86_64 + Linux aarch64
 - [x] Matrix build: macOS x86_64 (Intel) + macOS aarch64 (Apple Silicon)
@@ -46,8 +46,10 @@ sam się instaluje i zarejestruje. Tak jak Wazuh.
 - [x] Packaging Linux: `.deb` przez cargo-deb
 - [x] Packaging Linux: `.rpm` przez cargo-generate-rpm
 - [x] Maintainer scripts (preinst/postinst/prerm/postrm) — auto-systemd setup po `apt install`
-- [ ] Packaging macOS: `.pkg` przez pkgbuild (Sub-faza 1C — wymaga code signing)
 - [x] Upload wszystkich artifacts do GitHub Release on tag
+- [x] **Zweryfikowano `v0.1.0-rc3`** — `.deb` instalowany przez `apt install` na Ubuntu 24.04
+- [ ] **TODO**: zmień runner z `ubuntu-latest` / `ubuntu-24.04-arm` na `ubuntu-22.04*` (broader glibc compat — aktualnie `.deb` wymaga 24.04+)
+- [ ] Packaging macOS: `.pkg` przez pkgbuild (Sub-faza 1C — wymaga code signing)
 
 ### Sub-faza 1B — Install API
 - [ ] `POST /api/v1/agents/install` — generuje token (max_uses=1, 24h) + zwraca one-liner

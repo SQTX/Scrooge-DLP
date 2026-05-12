@@ -1,8 +1,9 @@
 # Milestone 1 — Status pracy
 
-> **Stan na:** 2026-05-11
+> **Stan na:** 2026-05-12
 > **Branch:** `main`
-> **Status:** ✅ **MILESTONE 1 COMPLETE** — wszystkie 12 kroków zakończone i zmergowane.
+> **Status:** ✅ **MILESTONE 1 COMPLETE** + bonusy + **Sub-faza 1A** (Release CI) **COMPLETE**.
+> **Aktualnie:** przed Sub-fazą 1B (Install API + scripts).
 
 ---
 
@@ -35,7 +36,35 @@
 
 Wszystkie 12 kroków zaimplementowane, zmergowane na `main`, zweryfikowane lokalnie.
 
-**Następne kroki = Milestone 2: Polityki i targeting** (osobny brief). Nie zaczynamy automatycznie — czekamy na decyzję.
+## Po Milestone 1 (commits na `main`)
+
+| Commit | Co |
+|---|---|
+| `a927bed` | fix Swagger `bearer_auth` security scheme (Authorize button działa) |
+| `93ed515` | embedded web dashboard pod `GET /` (vanilla HTML + Tailwind CDN) |
+| `27d216d` | konfigurowalny dashboard (auto-refresh + session timeouts via `manager.yaml`) |
+| `40af82a` | ROADMAP.md — pełna mapa Phase 0-6 |
+| `d19c652` | **Sub-faza 1A**: release CI workflow + .deb/.rpm metadata |
+| `c8ca537` + `c1fb049` | fixy cargo-generate-rpm (package path + asset paths) |
+
+## Sub-faza 1A — COMPLETE ✅
+
+GitHub Actions Release pipeline:
+- Tag `v*` triggers build dla 5 platform: Linux x86_64/aarch64, macOS Intel/ARM, Windows
+- `.deb` + `.rpm` dla Linux (cargo-deb + cargo-generate-rpm)
+- Maintainer scripts: preinst (user), postinst (config), prerm, postrm (purge cleanup)
+- Auto-upload do GitHub Releases
+
+**Zweryfikowane:** `v0.1.0-rc3` release. `.deb` instalowany przez `apt install` na Ubuntu 24.04 (Docker test, 2026-05-12):
+- user `scrooge` utworzony (uid 999, system)
+- `/usr/bin/scrooge-agent` 4.7 MB, executable
+- `/lib/systemd/system/scrooge-agent.service`
+- `/etc/scrooge/agent.yaml` (auto-skopiowane z template przez postinst)
+- `--version` zwraca poprawnie
+
+## Znane TODO (przed Sub-fazą 1B)
+
+- **Ubuntu 22.04 runners w release.yml** — aktualnie `.deb` wymaga glibc ≥ 2.39 (Ubuntu 24.04+) bo build na `ubuntu-latest` / `ubuntu-24.04-arm`. Zmiana na `ubuntu-22.04` / `ubuntu-22.04-arm` da broader compat (22.04 + 24.04 + nowsze).
 
 ---
 
