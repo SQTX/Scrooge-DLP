@@ -102,7 +102,12 @@ async fn main() -> anyhow::Result<()> {
     })?;
 
     // Komponenty serwerów.
-    let api_state = AppState::new(pool.clone(), &config.auth, config.dashboard.clone());
+    let api_state = AppState::new(
+        pool.clone(),
+        &config.auth,
+        config.dashboard.clone(),
+        &config.server,
+    );
     let tls = grpc::tls_config(&config.server).context("building TLS config")?;
     let grpc_service = grpc::AgentServiceImpl::new(pool.clone(), ca);
     let grpc_server = Server::builder()

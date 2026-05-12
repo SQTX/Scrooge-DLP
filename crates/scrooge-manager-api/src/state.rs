@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use jsonwebtoken::{DecodingKey, EncodingKey};
-use scrooge_common::config::{AuthConfig, DashboardConfig};
+use scrooge_common::config::{AuthConfig, DashboardConfig, ManagerServerConfig};
 use sqlx::PgPool;
 
 /// Stan współdzielony między handlerami.
@@ -23,6 +23,18 @@ struct Inner {
     pool: PgPool,
     auth: AuthMaterial,
     dashboard: DashboardConfig,
+    install: InstallConfig,
+}
+
+/// Pola configu managera potrzebne przez install API (Sub-faza 1B).
+/// Wszystkie opcjonalne (poza `ca_cert_path`) — `/install.sh` zwraca 503
+/// gdy któreś jest puste, żeby nie wystawiać niedziałającego one-linera.
+#[derive(Debug, Clone)]
+pub struct InstallConfig {
+    pub public_grpc_endpoint: Option<String>,
+    pub public_rest_base_url: Option<String>,
+    pub agent_release_tag: Option<String>,
+    pub ca_cert_path: String,
 }
 
 pub(crate) struct AuthMaterial {
@@ -34,7 +46,12 @@ pub(crate) struct AuthMaterial {
 
 impl AppState {
     #[must_use]
-    pub fn new(pool: PgPool, auth_cfg: &AuthConfig, dashboard: DashboardConfig) -> Self {
+    pub fn new(
+        pool: PgPool,
+        auth_cfg: &AuthConfig,
+        dashboard: DashboardConfig,
+        server_cfg: &ManagerServerConfig,
+    ) -> Self {
         let secret = auth_cfg.jwt_secret.as_bytes();
         let auth = AuthMaterial {
             encoding: EncodingKey::from_secret(secret),
@@ -42,11 +59,18 @@ impl AppState {
             access_ttl_secs: auth_cfg.access_token_ttl_secs,
             refresh_ttl_secs: auth_cfg.refresh_token_ttl_secs,
         };
+        let install = InstallConfig {
+            public_grpc_endpoint: server_cfg.public_grpc_endpoint.clone(),
+            public_rest_base_url: server_cfg.public_rest_base_url.clone(),
+            agent_release_tag: server_cfg.agent_release_tag.clone(),
+            ca_cert_path: server_cfg.ca_cert_path.clone(),
+        };
         Self {
             inner: Arc::new(Inner {
                 pool,
                 auth,
                 dashboard,
+                install,
             }),
         }
     }
@@ -63,6 +87,11 @@ impl AppState {
     #[must_use]
     pub fn dashboard_config(&self) -> &DashboardConfig {
         &self.inner.dashboard
+    }
+
+    #[must_use]
+    pub fn install_config(&self) -> &InstallConfig {
+        &self.inner.install
     }
 }
 

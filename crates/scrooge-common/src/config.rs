@@ -140,6 +140,12 @@ pub struct ManagerServerConfig {
     /// | sudo bash`. Wymagany tylko gdy używasz install API.
     #[serde(default)]
     pub public_rest_base_url: Option<String>,
+
+    /// GitHub Release tag używany jako źródło `.deb`/`.rpm` w `/install.sh`
+    /// (np. `v0.1.0-rc3`). Wymagany gdy używasz install API. W przyszłości
+    /// może domyślnie wskazywać na `latest` (po Sub-fazie 1B).
+    #[serde(default)]
+    pub agent_release_tag: Option<String>,
 }
 
 /// Sekcja `database:` — PostgreSQL.

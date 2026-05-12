@@ -56,6 +56,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/refresh", post(auth::refresh))
         .route("/agents", get(handlers::agents::list))
         .route("/agents/install", post(handlers::install::create))
+        .route("/install.sh", get(handlers::install::script))
         .route("/dashboard/config", get(handlers::dashboard::config))
         .with_state(state.clone());
 
@@ -125,6 +126,7 @@ impl Modify for SecurityAddon {
         auth::refresh,
         handlers::agents::list,
         handlers::install::create,
+        handlers::install::script,
         handlers::dashboard::config,
     ),
     components(schemas(

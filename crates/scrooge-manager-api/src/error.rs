@@ -34,6 +34,9 @@ pub enum ApiError {
     #[error("bad request: {0}")]
     BadRequest(String),
 
+    #[error("service unavailable: {0}")]
+    ServiceUnavailable(String),
+
     #[error("database error")]
     Database(#[from] sqlx::Error),
 
@@ -58,6 +61,7 @@ impl IntoResponse for ApiError {
             Self::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+            Self::ServiceUnavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "service_unavailable"),
             Self::Database(e) => {
                 tracing::error!(error = %e, "database error");
                 (StatusCode::INTERNAL_SERVER_ERROR, "database_error")
