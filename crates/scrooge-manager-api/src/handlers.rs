@@ -6,4 +6,5 @@
 //! Handler'y REST API.
 
 pub mod agents;
+pub mod dashboard;
 pub mod health;

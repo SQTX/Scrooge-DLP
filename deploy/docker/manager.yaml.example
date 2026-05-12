@@ -26,3 +26,16 @@ auth:
   jwt_secret:             "${JWT_SECRET}"
   access_token_ttl_secs:  3600
   refresh_token_ttl_secs: 2592000
+
+# Preferencje dashboardu - serwowane przez GET /api/v1/dashboard/config.
+# Production-safe default: hard logout po godzinie.
+dashboard:
+  auto_refresh:
+    enabled:        true
+    interval_secs:  10
+    mode:           "active_only"   # active_only | always | off
+  session:
+    idle_timeout_secs:     3600
+    absolute_timeout_secs: 3600
+    warn_before_secs:      60
+    extend_on_activity:    false

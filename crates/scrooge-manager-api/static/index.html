@@ -56,6 +56,7 @@
           <h1 class="text-base font-semibold">ScroogeDLP</h1>
         </div>
         <div class="flex items-center space-x-4 text-sm">
+          <span id="session-info" class="text-gray-500 text-xs"></span>
           <span class="text-gray-600">Signed in as <span id="current-user" class="font-medium text-gray-800"></span></span>
           <button id="logout-btn" class="text-red-600 hover:text-red-800 font-medium">Logout</button>
         </div>
@@ -69,7 +70,7 @@
           <p class="text-sm text-gray-500 mt-1">
             <span id="agent-count">0</span> registered
             <span class="text-gray-300 mx-2">·</span>
-            auto-refresh every 10s
+            <span id="refresh-status">auto-refresh disabled</span>
             <span class="text-gray-300 mx-2">·</span>
             last updated <span id="last-refresh-time" class="text-gray-400">—</span>
           </p>
@@ -109,11 +110,12 @@
       </div>
 
       <details class="mt-6 text-sm text-gray-500">
-        <summary class="cursor-pointer hover:text-gray-700">API endpoints used by this dashboard</summary>
-        <div class="mt-2 ml-4 font-mono text-xs space-y-1">
-          <div><span class="text-green-600">POST</span> /api/v1/auth/login</div>
-          <div><span class="text-blue-600">GET</span> /api/v1/agents <span class="text-gray-400">(Bearer JWT)</span></div>
-          <div class="text-gray-400">… see full spec at <a href="/api/v1/docs" class="text-blue-600 hover:underline">/api/v1/docs</a></div>
+        <summary class="cursor-pointer hover:text-gray-700">Session &amp; API info</summary>
+        <div class="mt-2 ml-4 text-xs space-y-1">
+          <div id="session-debug" class="font-mono"></div>
+          <div class="text-gray-400 mt-2">
+            Full API spec: <a href="/api/v1/docs" class="text-blue-600 hover:underline">/api/v1/docs</a>
+          </div>
         </div>
       </details>
     </main>
@@ -129,20 +131,15 @@
       <div class="px-6 py-4 space-y-3">
         <p class="text-sm text-gray-600">
           <strong>Aktualnie:</strong> nie ma jeszcze pre-built binarki w GitHub Releases ani install scriptu —
-          to milestone „Wazuh-flow" (poza zakresem Milestone 1). Tymczasem instalacja jest manualna:
+          to milestone „Wazuh-flow". Tymczasem instalacja jest manualna:
         </p>
         <ol class="text-sm text-gray-700 list-decimal list-inside space-y-2">
-          <li>Sklonuj repo na docelową maszynę: <code class="bg-gray-100 px-1 rounded text-xs">git clone https://github.com/SQTX/Scrooge-DLP</code></li>
-          <li>Wygeneruj token: <code class="bg-gray-100 px-1 rounded text-xs">make dev-bootstrap</code> (na managerze)</li>
+          <li>Sklonuj repo: <code class="bg-gray-100 px-1 rounded text-xs">git clone https://github.com/SQTX/Scrooge-DLP</code></li>
+          <li>Wygeneruj token na managerze: <code class="bg-gray-100 px-1 rounded text-xs">make dev-bootstrap</code></li>
           <li>Skopiuj <code class="bg-gray-100 px-1 rounded text-xs">dev-certs/ca.pem</code> na maszynę agenta</li>
-          <li>Konfig <code class="bg-gray-100 px-1 rounded text-xs">/etc/scrooge/agent.yaml</code> (endpoint + token + ca path)</li>
+          <li>Konfig <code class="bg-gray-100 px-1 rounded text-xs">/etc/scrooge/agent.yaml</code></li>
           <li>Build i start: <code class="bg-gray-100 px-1 rounded text-xs">./deploy/dev/rebuild-and-restart-agent.sh</code></li>
         </ol>
-        <p class="text-sm text-gray-600 mt-3">
-          Pełen guide:
-          <a href="https://github.com/SQTX/Scrooge-DLP/blob/main/deploy/dev/README.md" target="_blank"
-             class="text-blue-600 hover:underline">deploy/dev/README.md</a>
-        </p>
       </div>
       <div class="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
         <button onclick="closeModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded">Close</button>
@@ -150,30 +147,164 @@
     </div>
   </div>
 
-  <div id="toast" class="hidden fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded shadow-lg text-sm"></div>
+  <!-- Session warning banner (przed auto-logout) -->
+  <div id="session-warning" class="hidden fixed top-0 left-0 right-0 bg-yellow-100 border-b border-yellow-300 text-yellow-900 px-4 py-3 text-sm text-center z-40">
+    <span id="session-warning-text"></span>
+    <button id="extend-session-btn" class="ml-3 underline font-medium hover:no-underline">Stay signed in</button>
+  </div>
+
+  <div id="toast" class="hidden fixed bottom-4 right-4 bg-gray-800 text-white px-4 py-2 rounded shadow-lg text-sm z-50"></div>
 
   <script>
     'use strict';
-    const TOKEN_KEY = 'scrooge_token';
-    const USER_KEY  = 'scrooge_user';
+    const TOKEN_KEY  = 'scrooge_token';
+    const USER_KEY   = 'scrooge_user';
+    const LOGIN_KEY  = 'scrooge_login_time';
+
+    // Loaded z GET /api/v1/dashboard/config przed login screen.
+    let CONFIG = null;
+
+    // Session timing state
+    let lastActivity = Date.now();
+    let loginTime   = parseInt(localStorage.getItem(LOGIN_KEY) || '0', 10) || Date.now();
+    let warnedThisSession = false;
+
     let refreshTimer = null;
+    let sessionTimer = null;
+
     const $ = id => document.getElementById(id);
 
+    // ── Config fetch ────────────────────────────────────────────────
+    async function fetchConfig() {
+      try {
+        const r = await fetch('/api/v1/dashboard/config');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        CONFIG = await r.json();
+      } catch (err) {
+        console.error('Config fetch failed, using fallback:', err);
+        CONFIG = {
+          auto_refresh: { enabled: true, interval_secs: 10, mode: 'active_only' },
+          session: { idle_timeout_secs: 3600, absolute_timeout_secs: 3600,
+                     warn_before_secs: 60, extend_on_activity: false },
+        };
+      }
+    }
+
+    // ── Screen routing ──────────────────────────────────────────────
     function showLogin() {
       $('login-screen').classList.remove('hidden');
       $('login-screen').classList.add('flex');
       $('main-screen').classList.add('hidden');
+      $('session-warning').classList.add('hidden');
       if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+      if (sessionTimer) { clearInterval(sessionTimer); sessionTimer = null; }
     }
     function showMain() {
       $('login-screen').classList.add('hidden');
       $('login-screen').classList.remove('flex');
       $('main-screen').classList.remove('hidden');
       $('current-user').textContent = localStorage.getItem(USER_KEY) || 'admin';
+      lastActivity = Date.now();
+      if (!localStorage.getItem(LOGIN_KEY)) {
+        loginTime = Date.now();
+        localStorage.setItem(LOGIN_KEY, String(loginTime));
+      } else {
+        loginTime = parseInt(localStorage.getItem(LOGIN_KEY), 10);
+      }
+      warnedThisSession = false;
+      startSessionTicker();
+      updateRefreshStatusLabel();
+      startAutoRefresh();
       loadAgents();
-      refreshTimer = setInterval(loadAgents, 10000);
     }
 
+    function updateRefreshStatusLabel() {
+      const ar = CONFIG.auto_refresh;
+      const lbl = !ar.enabled || ar.mode === 'off'
+        ? 'auto-refresh off'
+        : (ar.mode === 'always'
+            ? 'auto-refresh every ' + ar.interval_secs + 's'
+            : 'auto-refresh every ' + ar.interval_secs + 's (active only)');
+      $('refresh-status').textContent = lbl;
+    }
+
+    // ── Auto-refresh ────────────────────────────────────────────────
+    function startAutoRefresh() {
+      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+      const ar = CONFIG.auto_refresh;
+      if (!ar.enabled || ar.mode === 'off') return;
+
+      refreshTimer = setInterval(() => {
+        if (ar.mode === 'active_only') {
+          const idleSec = (Date.now() - lastActivity) / 1000;
+          if (idleSec > 60) return; // user idle, skip
+        }
+        loadAgents();
+      }, Math.max(1000, ar.interval_secs * 1000));
+    }
+
+    // ── Session ticker (idle + absolute timeout + warn) ─────────────
+    function startSessionTicker() {
+      if (sessionTimer) clearInterval(sessionTimer);
+      sessionTimer = setInterval(() => {
+        const s = CONFIG.session;
+        const now = Date.now();
+        const idleSec = (now - lastActivity) / 1000;
+        const absSec  = (now - loginTime) / 1000;
+
+        // Decyduj czy timeout
+        const idleHit = s.idle_timeout_secs > 0 && idleSec >= s.idle_timeout_secs;
+        const absHit  = s.absolute_timeout_secs > 0 && absSec >= s.absolute_timeout_secs;
+
+        if (idleHit || absHit) {
+          toast(idleHit
+            ? 'Logged out — ' + s.idle_timeout_secs + 's of inactivity'
+            : 'Logged out — session expired (' + s.absolute_timeout_secs + 's)');
+          doLogout();
+          return;
+        }
+
+        // Compute time-until-timeout
+        const secsToIdle = s.idle_timeout_secs > 0 ? s.idle_timeout_secs - idleSec : Infinity;
+        const secsToAbs  = s.absolute_timeout_secs > 0 ? s.absolute_timeout_secs - absSec : Infinity;
+        const secsLeft   = Math.min(secsToIdle, secsToAbs);
+
+        // Warn banner
+        if (secsLeft <= s.warn_before_secs && secsLeft > 0) {
+          $('session-warning').classList.remove('hidden');
+          $('session-warning-text').textContent =
+            'Your session will end in ' + Math.ceil(secsLeft) + 's.';
+          warnedThisSession = true;
+        } else if (secsLeft > s.warn_before_secs && warnedThisSession) {
+          // Aktywność po warning'u przedłużyła — schowaj banner
+          $('session-warning').classList.add('hidden');
+        }
+
+        // Debug info
+        $('session-debug').textContent =
+          'idle: ' + Math.floor(idleSec) + 's / ' + (s.idle_timeout_secs || '∞') + 's    ' +
+          'absolute: ' + Math.floor(absSec) + 's / ' + (s.absolute_timeout_secs || '∞') + 's    ' +
+          'time left: ' + Math.floor(secsLeft) + 's';
+        $('session-info').textContent = 'session ends in ' + Math.floor(secsLeft) + 's';
+      }, 1000);
+    }
+
+    // ── Activity tracking ───────────────────────────────────────────
+    function bindActivityListeners() {
+      const reset = () => { lastActivity = Date.now(); };
+      for (const ev of ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart']) {
+        document.addEventListener(ev, reset, { passive: true });
+      }
+    }
+
+    $('extend-session-btn').addEventListener('click', () => {
+      lastActivity = Date.now();
+      $('session-warning').classList.add('hidden');
+      // TODO: gdy extend_on_activity = true, tu wywołamy POST /auth/refresh
+      toast('Session extended');
+    });
+
+    // ── Toast ───────────────────────────────────────────────────────
     function toast(msg) {
       const el = $('toast');
       el.textContent = msg;
@@ -181,6 +312,7 @@
       setTimeout(() => el.classList.add('hidden'), 2500);
     }
 
+    // ── Login / logout ──────────────────────────────────────────────
     $('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const username = $('username').value.trim();
@@ -202,6 +334,7 @@
         const body = await r.json();
         localStorage.setItem(TOKEN_KEY, body.access_token);
         localStorage.setItem(USER_KEY, username);
+        localStorage.setItem(LOGIN_KEY, String(Date.now()));
         showMain();
       } catch (err) {
         errEl.textContent = 'Network error: ' + err.message;
@@ -209,18 +342,21 @@
       }
     });
 
-    $('logout-btn').addEventListener('click', () => {
+    function doLogout() {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(LOGIN_KEY);
       showLogin();
-    });
+    }
+    $('logout-btn').addEventListener('click', doLogout);
 
+    // ── Refresh / install ───────────────────────────────────────────
     $('refresh-btn').addEventListener('click', () => { loadAgents(); toast('Refreshed'); });
-
     $('install-btn').addEventListener('click', () => $('install-modal').classList.remove('hidden'));
     window.closeModal = () => $('install-modal').classList.add('hidden');
     $('install-modal').addEventListener('click', (e) => { if (e.target.id === 'install-modal') closeModal(); });
 
+    // ── Load agents ─────────────────────────────────────────────────
     async function loadAgents() {
       const token = localStorage.getItem(TOKEN_KEY);
       if (!token) { showLogin(); return; }
@@ -228,8 +364,7 @@
         const r = await fetch('/api/v1/agents', { headers: { 'Authorization': 'Bearer ' + token } });
         if (r.status === 401) {
           toast('Session expired — please log in again');
-          localStorage.removeItem(TOKEN_KEY);
-          showLogin();
+          doLogout();
           return;
         }
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -241,8 +376,6 @@
       }
     }
 
-    // Bezpieczne renderowanie przez createElement — żadnego innerHTML
-    // dla user-controlled inputów (hostname etc. mogą zawierać HTML).
     function renderAgents(agents) {
       const tbody = $('agents-tbody');
       const empty = $('empty-state');
@@ -250,11 +383,7 @@
       $('last-refresh-time').textContent = new Date().toLocaleTimeString();
 
       while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
-
-      if (agents.length === 0) {
-        empty.classList.remove('hidden');
-        return;
-      }
+      if (agents.length === 0) { empty.classList.remove('hidden'); return; }
       empty.classList.add('hidden');
 
       const now = Date.now();
@@ -266,7 +395,6 @@
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-gray-50';
 
-        // Status
         const tdStatus = document.createElement('td');
         tdStatus.className = 'px-6 py-3 whitespace-nowrap';
         const dot = document.createElement('span');
@@ -277,39 +405,33 @@
         tdStatus.appendChild(dot); tdStatus.appendChild(lbl);
         tr.appendChild(tdStatus);
 
-        // Hostname
         const tdHost = document.createElement('td');
         tdHost.className = 'px-6 py-3 whitespace-nowrap text-sm font-mono';
         tdHost.textContent = a.hostname;
         tr.appendChild(tdHost);
 
-        // OS / Arch
         const tdOs = document.createElement('td');
         tdOs.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-700';
         tdOs.textContent = a.os + ' / ' + (a.arch || '?');
         tr.appendChild(tdOs);
 
-        // Version
         const tdVer = document.createElement('td');
         tdVer.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-700';
         tdVer.textContent = a.agent_version || '—';
         tr.appendChild(tdVer);
 
-        // Enrolled
         const tdEnr = document.createElement('td');
         tdEnr.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-600';
         tdEnr.title = a.enrolled_at || '';
         tdEnr.textContent = formatAgo(new Date(a.enrolled_at));
         tr.appendChild(tdEnr);
 
-        // Last seen
         const tdLs = document.createElement('td');
         tdLs.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-600';
         tdLs.title = a.last_seen || '';
         tdLs.textContent = lastSeen ? formatAgo(lastSeen) : '—';
         tr.appendChild(tdLs);
 
-        // Actions
         const tdAct = document.createElement('td');
         tdAct.className = 'px-6 py-3 whitespace-nowrap text-xs';
         const copyBtn = document.createElement('button');
@@ -341,7 +463,12 @@
       return Math.floor(sec / 86400) + 'd ago';
     }
 
-    if (localStorage.getItem(TOKEN_KEY)) showMain(); else showLogin();
+    // ── Init ────────────────────────────────────────────────────────
+    (async () => {
+      await fetchConfig();
+      bindActivityListeners();
+      if (localStorage.getItem(TOKEN_KEY)) showMain(); else showLogin();
+    })();
   </script>
 </body>
 </html>

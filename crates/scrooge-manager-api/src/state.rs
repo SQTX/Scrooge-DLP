@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use jsonwebtoken::{DecodingKey, EncodingKey};
-use scrooge_common::config::AuthConfig;
+use scrooge_common::config::{AuthConfig, DashboardConfig};
 use sqlx::PgPool;
 
 /// Stan współdzielony między handlerami.
@@ -22,6 +22,7 @@ pub struct AppState {
 struct Inner {
     pool: PgPool,
     auth: AuthMaterial,
+    dashboard: DashboardConfig,
 }
 
 pub(crate) struct AuthMaterial {
@@ -33,7 +34,7 @@ pub(crate) struct AuthMaterial {
 
 impl AppState {
     #[must_use]
-    pub fn new(pool: PgPool, auth_cfg: &AuthConfig) -> Self {
+    pub fn new(pool: PgPool, auth_cfg: &AuthConfig, dashboard: DashboardConfig) -> Self {
         let secret = auth_cfg.jwt_secret.as_bytes();
         let auth = AuthMaterial {
             encoding: EncodingKey::from_secret(secret),
@@ -42,7 +43,11 @@ impl AppState {
             refresh_ttl_secs: auth_cfg.refresh_token_ttl_secs,
         };
         Self {
-            inner: Arc::new(Inner { pool, auth }),
+            inner: Arc::new(Inner {
+                pool,
+                auth,
+                dashboard,
+            }),
         }
     }
 
@@ -53,6 +58,11 @@ impl AppState {
 
     pub(crate) fn auth(&self) -> &AuthMaterial {
         &self.inner.auth
+    }
+
+    #[must_use]
+    pub fn dashboard_config(&self) -> &DashboardConfig {
+        &self.inner.dashboard
     }
 }
 

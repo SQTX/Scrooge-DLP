@@ -26,3 +26,14 @@ auth:
   jwt_secret:               "dev-only-jwt-secret-DO-NOT-USE-IN-PRODUCTION-32chars-min!!"
   access_token_ttl_secs:    3600
   refresh_token_ttl_secs:   2592000
+
+dashboard:
+  auto_refresh:
+    enabled:        true
+    interval_secs:  10
+    mode:           "active_only"
+  session:
+    idle_timeout_secs:     3600
+    absolute_timeout_secs: 3600
+    warn_before_secs:      60
+    extend_on_activity:    false

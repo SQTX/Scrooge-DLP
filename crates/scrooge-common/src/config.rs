@@ -108,6 +108,8 @@ pub struct ManagerConfig {
     #[serde(default)]
     pub syslog_forwarder: SyslogForwarderConfig,
     pub auth: AuthConfig,
+    #[serde(default)]
+    pub dashboard: DashboardConfig,
 }
 
 /// Sekcja `server:` — listenery gRPC i REST + TLS.
@@ -203,6 +205,70 @@ pub struct AuthConfig {
     pub refresh_token_ttl_secs: u64,
 }
 
+/// Sekcja `dashboard:` — preferencje dla embedded web dashboard'u.
+/// Pobierane przez frontend przez `GET /api/v1/dashboard/config` (no auth).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DashboardConfig {
+    #[serde(default)]
+    pub auto_refresh: AutoRefreshConfig,
+    #[serde(default)]
+    pub session: SessionConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoRefreshConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_refresh_interval_secs")]
+    pub interval_secs: u32,
+    /// `"always"` | `"active_only"` | `"off"`.
+    /// `active_only` skipuje refresh gdy user idle > 60s (oszczędność CPU).
+    #[serde(default = "default_refresh_mode")]
+    pub mode: String,
+}
+
+impl Default for AutoRefreshConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_secs: default_refresh_interval_secs(),
+            mode: default_refresh_mode(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionConfig {
+    /// Maks. sekund bezczynności (mysz/klawiatura/scroll) przed auto-logout.
+    /// `0` = wyłączone.
+    #[serde(default = "default_idle_timeout_secs")]
+    pub idle_timeout_secs: u32,
+
+    /// Absolutny hard-limit — niezależnie od aktywności. `0` = wyłączone.
+    #[serde(default = "default_absolute_timeout_secs")]
+    pub absolute_timeout_secs: u32,
+
+    /// Ile sekund przed timeoutem pokazać toast „Session ending in Xs".
+    #[serde(default = "default_warn_before_secs")]
+    pub warn_before_secs: u32,
+
+    /// Czy aktywność użytkownika automatycznie przedłuża session przez
+    /// background refresh JWT (przed `access_token_ttl_secs` expiry).
+    #[serde(default)]
+    pub extend_on_activity: bool,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            idle_timeout_secs: default_idle_timeout_secs(),
+            absolute_timeout_secs: default_absolute_timeout_secs(),
+            warn_before_secs: default_warn_before_secs(),
+            extend_on_activity: false,
+        }
+    }
+}
+
 impl ManagerConfig {
     /// Wczytuje konfigurację z pliku YAML i waliduje.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
@@ -272,6 +338,26 @@ fn default_access_token_ttl_secs() -> u64 {
 
 fn default_refresh_token_ttl_secs() -> u64 {
     30 * 24 * 3600
+}
+
+fn default_refresh_interval_secs() -> u32 {
+    10
+}
+
+fn default_refresh_mode() -> String {
+    "active_only".to_string()
+}
+
+fn default_idle_timeout_secs() -> u32 {
+    3600 // 1h
+}
+
+fn default_absolute_timeout_secs() -> u32 {
+    3600 // 1h (hard logout po godzinie, niezależnie od aktywności)
+}
+
+fn default_warn_before_secs() -> u32 {
+    60
 }
 
 // ──────────────────────────────────────────────────────────────────────────

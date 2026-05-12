@@ -24,3 +24,19 @@ auth:
   jwt_secret:               "dev-only-jwt-secret-DO-NOT-USE-IN-PRODUCTION-32chars-min!!"
   access_token_ttl_secs:    3600
   refresh_token_ttl_secs:   2592000  # 30 dni
+
+# Preferencje dashboardu - serwowane przez GET /api/v1/dashboard/config.
+# Default: hard logout po godzinie (compliance-friendly).
+dashboard:
+  auto_refresh:
+    enabled:        true
+    interval_secs:  10
+    # always      = refresh nawet jeśli user nieaktywny (zawsze świeże dane)
+    # active_only = refresh tylko gdy user aktywny (oszczędność CPU)
+    # off         = tylko manual Refresh button
+    mode:           "active_only"
+  session:
+    idle_timeout_secs:     3600    # 1h bezczynności = logout (0 = wyłączone)
+    absolute_timeout_secs: 3600    # 1h hard limit niezależnie od aktywności
+    warn_before_secs:      60      # toast "Session ending in 60s"
+    extend_on_activity:    false   # aktywność NIE przedłuża sesji

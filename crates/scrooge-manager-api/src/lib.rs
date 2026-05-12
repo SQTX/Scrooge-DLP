@@ -55,6 +55,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/login", post(auth::login))
         .route("/auth/refresh", post(auth::refresh))
         .route("/agents", get(handlers::agents::list))
+        .route("/dashboard/config", get(handlers::dashboard::config))
         .with_state(state.clone());
 
     Router::new()
@@ -122,6 +123,7 @@ impl Modify for SecurityAddon {
         auth::login,
         auth::refresh,
         handlers::agents::list,
+        handlers::dashboard::config,
     ),
     components(schemas(
         handlers::health::HealthResponse,
@@ -129,12 +131,16 @@ impl Modify for SecurityAddon {
         auth::LoginResponse,
         auth::RefreshRequest,
         handlers::agents::AgentDto,
+        handlers::dashboard::DashboardConfigDto,
+        handlers::dashboard::AutoRefreshDto,
+        handlers::dashboard::SessionDto,
         error::ErrorBody,
     )),
     tags(
-        (name = "health",  description = "Liveness/readiness checks"),
-        (name = "auth",    description = "Authentication: login + refresh"),
-        (name = "agents",  description = "Agent registry"),
+        (name = "health",    description = "Liveness/readiness checks"),
+        (name = "auth",      description = "Authentication: login + refresh"),
+        (name = "agents",    description = "Agent registry"),
+        (name = "dashboard", description = "Dashboard preferences"),
     )
 )]
 struct ApiDoc;
