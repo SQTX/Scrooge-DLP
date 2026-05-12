@@ -66,12 +66,13 @@ sam się instaluje i zarejestruje. Tak jak Wazuh.
 - [ ] `deploy/installers/install-windows.ps1` — PowerShell, Windows service
 - [ ] Test każdy installer ręcznie na świeżej VM/maszynie
 
-### Sub-faza 1D — Dashboard wizard
-- [ ] „Add agent" modal: dropdown OS + opcjonalny hostname
-- [ ] Po submit: wywołanie POST /agents/install + wyświetlenie one-liner
-- [ ] Copy-to-clipboard button
-- [ ] Live indicator „Waiting for agent connection..."
-- [ ] Auto-detect nowego agenta + toast „Agent connected: {hostname}"
+### Sub-faza 1D — Dashboard wizard ✅ DONE
+- [x] „Add agent" modal: dropdown OS (linux aktywny; macos/windows disabled) + opcjonalny description
+- [x] Po submit: wywołanie POST /agents/install + wyświetlenie one-liner w stage 2
+- [x] Copy-to-clipboard button (navigator.clipboard)
+- [x] Live indicator „Waiting for agent connection..." (pulse dot na niebieskim tle)
+- [x] Auto-detect nowego agenta + toast „Agent connected: {hostname}" + indicator → zielony „✓ Connected"
+- [ ] Pełen E2E test z UTM VM: kliknij wizard → uruchom one-liner na czystym Ubuntu → zobacz toast
 
 ---
 

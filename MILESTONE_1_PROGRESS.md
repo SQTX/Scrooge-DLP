@@ -2,8 +2,8 @@
 
 > **Stan na:** 2026-05-12
 > **Branch:** `main` (worktree `claude/unruffled-jennings-c55c25` przed merge'm)
-> **Status:** ✅ **MILESTONE 1 COMPLETE** + bonusy + **Sub-faza 1A** (Release CI) + **Sub-faza 1B** (Install API) **COMPLETE**.
-> **Aktualnie:** przed Sub-fazą 1C (installer scripts + dashboard wizard + macOS .pkg / Windows .msi).
+> **Status:** ✅ **MILESTONE 1 COMPLETE** + bonusy + **Sub-faza 1A** (Release CI) + **Sub-faza 1B** (Install API) + **Sub-faza 1D** (Dashboard wizard) **COMPLETE**.
+> **Aktualnie:** Wazuh-flow domknięty backendowo + UI-owo. Otwarta tylko Sub-faza 1C (macOS .pkg + Windows .msi — wymagają code signing) + E2E test na żywym Ubuntu.
 
 ---
 
@@ -46,6 +46,22 @@ Wszystkie 12 kroków zaimplementowane, zmergowane na `main`, zweryfikowane lokal
 | `40af82a` | ROADMAP.md — pełna mapa Phase 0-6 |
 | `d19c652` | **Sub-faza 1A**: release CI workflow + .deb/.rpm metadata |
 | `c8ca537` + `c1fb049` | fixy cargo-generate-rpm (package path + asset paths) |
+
+## Sub-faza 1D — COMPLETE ✅
+
+Frontendowy klocek Wazuh-flow w embedded dashboardzie.
+
+- „+ Install agent" w toolbarze → modal wizard.
+- Stage 1: target_os dropdown (linux aktywny; macos/windows disabled
+  z labelką „wkrótce") + opcjonalny `description`.
+- Stage 2: `<pre>` z one-linerem + **Copy** button (navigator.clipboard)
+  + niebieski indicator „Waiting for agent connection…".
+- Wizard śledzi nowych agentów — gdy `renderAgents` zobaczy ID spoza
+  `knownAgentIds`, robi toast „Agent connected: {hostname}" i zamienia
+  indicator na zielony „✓ Connected: {hostname}". `hostname` wstawiany
+  przez safe DOM (textContent), bo agent może go deklarować dowolnie.
+- Wymaga `server.public_rest_base_url` w configu — gdy puste, wizard
+  pokazuje błąd zamiast crashować.
 
 ## Sub-faza 1B — COMPLETE ✅
 
