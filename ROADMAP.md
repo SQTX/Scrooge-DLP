@@ -48,7 +48,7 @@ sam się instaluje i zarejestruje. Tak jak Wazuh.
 - [x] Maintainer scripts (preinst/postinst/prerm/postrm) — auto-systemd setup po `apt install`
 - [x] Upload wszystkich artifacts do GitHub Release on tag
 - [x] **Zweryfikowano `v0.1.0-rc3`** — `.deb` instalowany przez `apt install` na Ubuntu 24.04
-- [ ] **TODO**: zmień runner z `ubuntu-latest` / `ubuntu-24.04-arm` na `ubuntu-22.04*` (broader glibc compat — aktualnie `.deb` wymaga 24.04+)
+- [x] Runner downgrade na `ubuntu-22.04*` w build + package-linux jobs (broader glibc compat: 22.04 + 24.04 + nowsze)
 - [ ] Packaging macOS: `.pkg` przez pkgbuild (Sub-faza 1C — wymaga code signing)
 
 ### Sub-faza 1B — Install API

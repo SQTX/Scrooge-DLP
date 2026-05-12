@@ -64,7 +64,13 @@ GitHub Actions Release pipeline:
 
 ## Znane TODO (przed Sub-fazą 1B)
 
-- **Ubuntu 22.04 runners w release.yml** — aktualnie `.deb` wymaga glibc ≥ 2.39 (Ubuntu 24.04+) bo build na `ubuntu-latest` / `ubuntu-24.04-arm`. Zmiana na `ubuntu-22.04` / `ubuntu-22.04-arm` da broader compat (22.04 + 24.04 + nowsze).
+_(brak — Sub-faza 1A w pełni zamknięta)_
+
+Wcześniejsze TODO „Ubuntu 22.04 runners w release.yml" zostało zaadresowane —
+build i package-linux jobs leca teraz na `ubuntu-22.04` / `ubuntu-22.04-arm`,
+co daje broader glibc compat (Ubuntu 22.04 + 24.04 + Debian 12 + RHEL 9
+itd.). Job `release` (publikacja artifacts) zostaje na `ubuntu-latest`, bo
+nie linkuje binarek.
 
 ---
 
