@@ -1,9 +1,9 @@
 # Milestone 1 — Status pracy
 
 > **Stan na:** 2026-05-12
-> **Branch:** `main`
-> **Status:** ✅ **MILESTONE 1 COMPLETE** + bonusy + **Sub-faza 1A** (Release CI) **COMPLETE**.
-> **Aktualnie:** przed Sub-fazą 1B (Install API + scripts).
+> **Branch:** `main` (worktree `claude/unruffled-jennings-c55c25` przed merge'm)
+> **Status:** ✅ **MILESTONE 1 COMPLETE** + bonusy + **Sub-faza 1A** (Release CI) + **Sub-faza 1B** (Install API) **COMPLETE**.
+> **Aktualnie:** przed Sub-fazą 1C (installer scripts + dashboard wizard + macOS .pkg / Windows .msi).
 
 ---
 
@@ -46,6 +46,34 @@ Wszystkie 12 kroków zaimplementowane, zmergowane na `main`, zweryfikowane lokal
 | `40af82a` | ROADMAP.md — pełna mapa Phase 0-6 |
 | `d19c652` | **Sub-faza 1A**: release CI workflow + .deb/.rpm metadata |
 | `c8ca537` + `c1fb049` | fixy cargo-generate-rpm (package path + asset paths) |
+
+## Sub-faza 1B — COMPLETE ✅
+
+Wazuh-flow install API. Admin klika „Add agent" w dashboardzie → dostaje
+`curl … | sudo bash` → agent sam się instaluje i rejestruje.
+
+- `POST /api/v1/agents/install` (admin only) — generuje single-use enrollment
+  token (UUID v4, SHA-256 w DB, 24h TTL, `max_uses=1`) + zwraca gotowy
+  one-liner z URL'em do `/install.sh`.
+- `GET /api/v1/install.sh?token=XYZ` (public — auth przez sam token) —
+  server-rendered bash. Detect distro/arch, pobiera `.deb` / `.rpm` z
+  GitHub Releases, instaluje, zapisuje CA do `/etc/scrooge/ca.pem`, sed'uje
+  `agent.yaml`, enable+restart `scrooge-agent.service`. Idempotent.
+- Nowy config: `server.public_grpc_endpoint` (gdzie agent łączy gRPC),
+  `server.public_rest_base_url` (gdzie installer się ładuje),
+  `server.agent_release_tag` (z którego GH release pobierać binarki).
+- Nowy wariant błędu `ApiError::ServiceUnavailable` (503) — zwracany gdy
+  któreś z 3 publicznych pól nie ustawione.
+
+**Lokalna weryfikacja** (manager + Postgres na Macu):
+- POST → response zawiera `install_command` z pełnym one-linerem
+- GET → 200 `text/x-shellscript`, ~5 KB, `bash -n` valid, brak placeholderów
+- GET z nieznanym tokenem → 401
+- GET bez tokena → 400 (axum query deser)
+
+**Pozostała weryfikacja** (do Sub-fazy 1C): faktyczne `curl … | sudo bash`
+na czystym Ubuntu w UTM — uruchomić agenta, sprawdzić że enroll'uje i
+heartbeat'y lecą do managera.
 
 ## Sub-faza 1A — COMPLETE ✅
 

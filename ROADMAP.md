@@ -51,11 +51,14 @@ sam się instaluje i zarejestruje. Tak jak Wazuh.
 - [x] Runner downgrade na `ubuntu-22.04*` w build + package-linux jobs (broader glibc compat: 22.04 + 24.04 + nowsze)
 - [ ] Packaging macOS: `.pkg` przez pkgbuild (Sub-faza 1C — wymaga code signing)
 
-### Sub-faza 1B — Install API
-- [ ] `POST /api/v1/agents/install` — generuje token (max_uses=1, 24h) + zwraca one-liner
-- [ ] `GET /api/v1/install.sh?token=XYZ` — server-rendered bash z embedded manager endpoint i CA
-- [ ] Walidacja: target_os enum (linux/macos/windows)
-- [ ] Auth: tylko admin może wywołać (Claims with role check)
+### Sub-faza 1B — Install API ✅ DONE
+- [x] `POST /api/v1/agents/install` — generuje token (max_uses=1, 24h) + zwraca one-liner
+- [x] `GET /api/v1/install.sh?token=XYZ` — server-rendered bash z embedded manager endpoint i CA
+- [x] Walidacja: target_os enum (linux/macos/windows)
+- [x] Auth: tylko admin może wywołać (Claims::require_admin)
+- [x] Konfiguracja: `server.public_grpc_endpoint` + `public_rest_base_url` + `agent_release_tag`
+- [x] Skrypt obsługuje Debian/Ubuntu (.deb) i RHEL-family (.rpm) — detect z `/etc/os-release`
+- [ ] **Pełen E2E**: faktyczne `curl … | sudo bash` na czystym Ubuntu (lokalnie tylko bash -n syntax check)
 
 ### Sub-faza 1C — Installer scripts
 - [ ] `deploy/installers/install-linux.sh` — detect arch, download binary, systemd unit, config
