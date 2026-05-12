@@ -134,7 +134,7 @@ jobs:
         run: cargo deb -p scrooge-agent-bin --no-build --target ${{ matrix.target }}
 
       - name: Build .rpm
-        run: cargo generate-rpm -p scrooge-agent-bin --target ${{ matrix.target }}
+        run: cargo generate-rpm -p crates/scrooge-agent-bin --target ${{ matrix.target }}
 
       - name: Collect packages
         shell: bash

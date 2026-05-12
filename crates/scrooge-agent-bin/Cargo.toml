@@ -77,11 +77,14 @@ maintainer-scripts = "../../deploy/installers/debian/"
 name       = "scrooge-agent"
 summary    = "ScroogeDLP endpoint agent"
 license    = "GPL-2.0-only"
+# Paths relative do directory z Cargo.toml (crates/scrooge-agent-bin/).
+# cargo-generate-rpm zamienia `target/release` → `target/<target>/release`
+# automatycznie gdy podany `--target`.
 assets = [
-    { source = "target/release/scrooge-agent", dest = "/usr/bin/scrooge-agent", mode = "755" },
-    { source = "deploy/dev/scrooge-agent.service", dest = "/usr/lib/systemd/system/scrooge-agent.service", mode = "644", config = false },
-    { source = "deploy/dev/agent.vm.yaml.example", dest = "/etc/scrooge/agent.yaml.example", mode = "644", config = true },
-    { source = "LICENSE", dest = "/usr/share/doc/scrooge-agent/LICENSE", mode = "644", doc = true },
+    { source = "../../target/release/scrooge-agent", dest = "/usr/bin/scrooge-agent", mode = "755" },
+    { source = "../../deploy/dev/scrooge-agent.service", dest = "/usr/lib/systemd/system/scrooge-agent.service", mode = "644", config = false },
+    { source = "../../deploy/dev/agent.vm.yaml.example", dest = "/etc/scrooge/agent.yaml.example", mode = "644", config = true },
+    { source = "../../LICENSE", dest = "/usr/share/doc/scrooge-agent/LICENSE", mode = "644", doc = true },
 ]
 auto-req = "no"
 [package.metadata.generate-rpm.requires]
