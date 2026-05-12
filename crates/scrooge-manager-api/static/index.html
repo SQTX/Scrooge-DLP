@@ -141,8 +141,8 @@
             <select id="install-target-os" required
                     class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
               <option value="linux">Linux (Debian/Ubuntu, RHEL, Fedora, Rocky, Alma)</option>
-              <option value="macos" disabled>macOS — wkrótce (Sub-faza 1C)</option>
-              <option value="windows" disabled>Windows — wkrótce (Sub-faza 1C)</option>
+              <option value="macos">macOS (Intel + Apple Silicon)</option>
+              <option value="windows">Windows 10/11 / Server (PowerShell)</option>
             </select>
           </div>
           <div>
@@ -157,7 +157,7 @@
 
       <!-- Stage 2: result -->
       <div id="install-result-stage" class="hidden px-6 py-4 space-y-3">
-        <p class="text-sm text-gray-600">
+        <p id="install-instructions" class="text-sm text-gray-600">
           Skopiuj poniższy one-liner i uruchom na endpoincie jako
           <code class="bg-gray-100 px-1 rounded">root</code>:
         </p>
@@ -473,6 +473,26 @@
         // Swap to result stage.
         $('install-command').textContent = body.install_command;
         $('install-expiry').textContent = new Date(body.expires_at).toLocaleString();
+        // Per-OS hint w naglowku stage'u 2.
+        const instructions = $('install-instructions');
+        while (instructions.firstChild) instructions.removeChild(instructions.firstChild);
+        if (target_os === 'windows') {
+          instructions.appendChild(document.createTextNode(
+            'Skopiuj one-liner i wklej w '));
+          const code = document.createElement('code');
+          code.className = 'bg-gray-100 px-1 rounded';
+          code.textContent = 'PowerShell (Administrator)';
+          instructions.appendChild(code);
+          instructions.appendChild(document.createTextNode(' na endpoincie:'));
+        } else {
+          instructions.appendChild(document.createTextNode(
+            'Skopiuj poniższy one-liner i uruchom na endpoincie jako '));
+          const code = document.createElement('code');
+          code.className = 'bg-gray-100 px-1 rounded';
+          code.textContent = 'root';
+          instructions.appendChild(code);
+          instructions.appendChild(document.createTextNode(':'));
+        }
         $('install-form-stage').classList.add('hidden');
         $('install-result-stage').classList.remove('hidden');
         $('install-generate-btn').classList.add('hidden');
