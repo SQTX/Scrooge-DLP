@@ -1,0 +1,30 @@
+# Build artifacts — nie potrzebne w obrazie, zaśmiecają context.
+target/
+**/target/
+
+# Lokalne dev artifacts (gitignored też).
+dev-certs/
+agent-data/
+node_modules/
+
+# rust-toolchain.toml wymusza rustup-auto-install (Rust 1.95 + 4 extra
+# rust-std targets ~2GB), co psuje Docker build na slim images / mniejszych
+# VM-kach. W kontenerze uzywamy toolchain'a z base image (rust:1.90-slim
+# itd.). Dla lokalnego dev'a plik zostaje na dysku, tylko Docker go nie
+# widzi.
+rust-toolchain.toml
+rust-toolchain
+
+# Git — nie potrzebne w build context.
+.git/
+.github/
+
+# Editor / OS noise.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Inne ignored buildy / cache.
+*.log
+.claude/
