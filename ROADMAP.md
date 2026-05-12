@@ -39,14 +39,15 @@ w dashboardzie, dostaje `curl ... | sudo bash`, klejsze na końcówce, agent
 sam się instaluje i zarejestruje. Tak jak Wazuh.
 
 ### Sub-faza 1A — Release CI pipeline
-- [ ] Utwórz `.github/workflows/release.yml` (trigger: tag `v*`)
-- [ ] Matrix build: Linux x86_64 + Linux aarch64
-- [ ] Matrix build: macOS x86_64 (Intel) + macOS aarch64 (Apple Silicon)
-- [ ] Matrix build: Windows x86_64
-- [ ] Packaging Linux: `.deb` przez cargo-deb
-- [ ] Packaging Linux: `.rpm` przez cargo-generate-rpm
-- [ ] Packaging macOS: `.pkg` przez pkgbuild
-- [ ] Upload wszystkich artifacts do GitHub Release on tag
+- [x] Utwórz `.github/workflows/release.yml` (trigger: tag `v*`)
+- [x] Matrix build: Linux x86_64 + Linux aarch64
+- [x] Matrix build: macOS x86_64 (Intel) + macOS aarch64 (Apple Silicon)
+- [x] Matrix build: Windows x86_64
+- [x] Packaging Linux: `.deb` przez cargo-deb
+- [x] Packaging Linux: `.rpm` przez cargo-generate-rpm
+- [x] Maintainer scripts (preinst/postinst/prerm/postrm) — auto-systemd setup po `apt install`
+- [ ] Packaging macOS: `.pkg` przez pkgbuild (Sub-faza 1C — wymaga code signing)
+- [x] Upload wszystkich artifacts do GitHub Release on tag
 
 ### Sub-faza 1B — Install API
 - [ ] `POST /api/v1/agents/install` — generuje token (max_uses=1, 24h) + zwraca one-liner

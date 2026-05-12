@@ -1,0 +1,186 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# ScroogeDLP - release workflow.
+#
+# Trigger: push tagu v* (np. `git tag v0.1.0 && git push origin v0.1.0`)
+# lub workflow_dispatch (manual, dla test releases).
+#
+# Builduje agent binaries dla 5 targetów, packuje .deb + .rpm dla Linux,
+# uploaduje wszystko do GitHub Release. macOS .pkg + Windows .msi w
+# sub-fazie 1C (wymagają code signing).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Test tag (np. v0.0.0-test)'
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write  # action-gh-release tworzy / aktualizuje GitHub Release
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────
+  # Build agent binaries per OS/arch (matrix).
+  # ────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target:  x86_64-unknown-linux-gnu
+            runner:  ubuntu-latest
+          - target:  aarch64-unknown-linux-gnu
+            runner:  ubuntu-24.04-arm
+          - target:  x86_64-apple-darwin
+            runner:  macos-15-intel
+          - target:  aarch64-apple-darwin
+            runner:  macos-latest
+          - target:  x86_64-pc-windows-msvc
+            runner:  windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-build-${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --bin scrooge-agent --target ${{ matrix.target }}
+
+      - name: Archive (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cd target/${{ matrix.target }}/release
+          tar czf "$GITHUB_WORKSPACE/dist/scrooge-agent-${{ matrix.target }}.tar.gz" scrooge-agent
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Compress-Archive -Path "target/${{ matrix.target }}/release/scrooge-agent.exe" `
+                           -DestinationPath "dist/scrooge-agent-${{ matrix.target }}.zip"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist/scrooge-agent-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Package .deb + .rpm dla Linux (per arch).
+  # ────────────────────────────────────────────────────────────────────────
+  package-linux:
+    name: Package Linux (${{ matrix.target }})
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target:  x86_64-unknown-linux-gnu
+            runner:  ubuntu-latest
+          - target:  aarch64-unknown-linux-gnu
+            runner:  ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-pkg-${{ matrix.target }}
+
+      - name: Install packaging tools (cached)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+
+      - name: Build release binary
+        run: cargo build --release --bin scrooge-agent --target ${{ matrix.target }}
+
+      - name: Build .deb
+        run: cargo deb -p scrooge-agent-bin --no-build --target ${{ matrix.target }}
+
+      - name: Build .rpm
+        run: cargo generate-rpm -p scrooge-agent-bin --target ${{ matrix.target }}
+
+      - name: Collect packages
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/debian/*.deb dist/        || true
+          cp target/${{ matrix.target }}/generate-rpm/*.rpm dist/  || true
+          ls -la dist/
+
+      - name: Upload packages artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  # ────────────────────────────────────────────────────────────────────────
+  # Create GitHub Release i upload wszystkich artifacts.
+  # ────────────────────────────────────────────────────────────────────────
+  release:
+    name: Create GitHub Release
+    needs: [build, package-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') || contains(github.event.inputs.tag, '-') }}
+          files: |
+            dist/scrooge-agent-*.tar.gz
+            dist/scrooge-agent-*.zip
+            dist/*.deb
+            dist/*.rpm

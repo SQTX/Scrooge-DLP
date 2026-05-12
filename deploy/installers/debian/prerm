@@ -1,0 +1,14 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# scrooge-agent — prerm (uruchamiane PRZED usunięciem pliki .deb).
+# Zatrzymuje + wyłącza serwis.
+
+set -e
+
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop scrooge-agent >/dev/null 2>&1 || true
+    systemctl disable scrooge-agent >/dev/null 2>&1 || true
+fi
+
+exit 0

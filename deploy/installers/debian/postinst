@@ -1,0 +1,34 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# scrooge-agent — postinst (uruchamiane PO rozpakowaniu .deb).
+# - systemctl daemon-reload (żeby zauważyć nowy unit)
+# - jeśli nie ma /etc/scrooge/agent.yaml, kopiujemy template (user musi edytować)
+# Nie startujemy automatycznie — agent wymaga konfiguracji manager.endpoint.
+
+set -e
+
+CONFIG="/etc/scrooge/agent.yaml"
+TEMPLATE="/etc/scrooge/agent.yaml.example"
+
+if [ ! -f "$CONFIG" ] && [ -f "$TEMPLATE" ]; then
+    cp "$TEMPLATE" "$CONFIG"
+    chown scrooge:scrooge "$CONFIG"
+    chmod 0640 "$CONFIG"
+fi
+
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+
+echo ""
+echo "▸ ScroogeDLP agent zainstalowany."
+echo ""
+echo "Następne kroki:"
+echo "  1. Edytuj $CONFIG (manager.endpoint + enrollment_token + ca_cert_path)"
+echo "  2. Wgraj CA cert managera do /etc/scrooge/ca.pem"
+echo "  3. Uruchom:  systemctl enable --now scrooge-agent"
+echo "  4. Logi:     journalctl -u scrooge-agent -f"
+echo ""
+
+exit 0

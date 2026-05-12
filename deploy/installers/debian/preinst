@@ -1,0 +1,23 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# scrooge-agent — preinst (uruchamiane PRZED rozpakowaniem .deb).
+# Tworzy system user `scrooge` + katalogi danych.
+
+set -e
+
+SCROOGE_USER="scrooge"
+SCROOGE_HOME="/var/lib/scrooge"
+
+if ! getent passwd "$SCROOGE_USER" >/dev/null; then
+    useradd --system --create-home \
+        --home-dir "$SCROOGE_HOME" \
+        --shell /usr/sbin/nologin \
+        --comment "ScroogeDLP agent" \
+        "$SCROOGE_USER"
+fi
+
+# Katalogi z prawidłowymi uprawnieniami.
+install -d -o "$SCROOGE_USER" -g "$SCROOGE_USER" -m 0750 /etc/scrooge
+install -d -o "$SCROOGE_USER" -g "$SCROOGE_USER" -m 0750 "$SCROOGE_HOME"
+
+exit 0

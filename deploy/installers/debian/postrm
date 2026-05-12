@@ -1,0 +1,26 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-only
+# scrooge-agent — postrm (uruchamiane PO usunięciu pliki .deb).
+# - daemon-reload żeby zauważyć usunięty unit
+# - na `purge` usuwamy user'a i konfigurację (apt-get purge scrooge-agent)
+# Na zwykłe remove (apt remove) zostawiamy /etc/scrooge/ i user'a.
+
+set -e
+
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+
+case "$1" in
+    purge)
+        # Pełna deinstalacja — kasuje config i state.
+        rm -rf /etc/scrooge
+        rm -rf /var/lib/scrooge
+        if getent passwd scrooge >/dev/null; then
+            userdel scrooge >/dev/null 2>&1 || true
+        fi
+        ;;
+esac
+
+exit 0

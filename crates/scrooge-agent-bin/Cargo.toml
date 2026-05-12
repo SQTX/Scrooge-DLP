@@ -40,3 +40,49 @@ scrooge-agent-windows = { path = "../scrooge-agent-windows" }
 
 [lints]
 workspace = true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Metadata dla `cargo deb` — generuje `.deb` package z binarki + systemd unit
+# + maintainer scripts. Build: `cargo deb -p scrooge-agent-bin`.
+# ─────────────────────────────────────────────────────────────────────────────
+[package.metadata.deb]
+name              = "scrooge-agent"
+maintainer        = "SQTX <sssqtx@gmail.com>"
+copyright         = "2026 SQTX <sssqtx@gmail.com>"
+license-file      = ["../../LICENSE", "0"]
+extended-description = """\
+ScroogeDLP endpoint agent — łączy się z managerem przez gRPC/mTLS,
+zbiera eventy DLP (file/clipboard/USB/network) i przesyła je
+do centralnego managera. Część systemu Data Loss Prevention
+inspirowanego Wazuh."""
+depends           = "$auto, systemd"
+section           = "admin"
+priority          = "optional"
+assets = [
+    ["target/release/scrooge-agent", "/usr/bin/scrooge-agent", "755"],
+    ["../../deploy/dev/scrooge-agent.service", "/lib/systemd/system/scrooge-agent.service", "644"],
+    ["../../deploy/dev/agent.vm.yaml.example", "/etc/scrooge/agent.yaml.example", "644"],
+]
+# `license-file` (powyżej) automatycznie kopiuje LICENSE do
+# /usr/share/doc/scrooge-agent/copyright, więc nie duplikujemy go w assets.
+# Maintainer scripts (preinst/postinst/prerm/postrm) same obsługują systemd
+# (przez `systemctl daemon-reload` w postinst, stop w prerm).
+maintainer-scripts = "../../deploy/installers/debian/"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Metadata dla `cargo generate-rpm` — analogicznie dla RHEL/Fedora/CentOS.
+# Build: `cargo generate-rpm -p scrooge-agent-bin` (po `cargo build --release`).
+# ─────────────────────────────────────────────────────────────────────────────
+[package.metadata.generate-rpm]
+name       = "scrooge-agent"
+summary    = "ScroogeDLP endpoint agent"
+license    = "GPL-2.0-only"
+assets = [
+    { source = "target/release/scrooge-agent", dest = "/usr/bin/scrooge-agent", mode = "755" },
+    { source = "deploy/dev/scrooge-agent.service", dest = "/usr/lib/systemd/system/scrooge-agent.service", mode = "644", config = false },
+    { source = "deploy/dev/agent.vm.yaml.example", dest = "/etc/scrooge/agent.yaml.example", mode = "644", config = true },
+    { source = "LICENSE", dest = "/usr/share/doc/scrooge-agent/LICENSE", mode = "644", doc = true },
+]
+auto-req = "no"
+[package.metadata.generate-rpm.requires]
+systemd = "*"
