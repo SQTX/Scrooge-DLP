@@ -55,6 +55,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/login", post(auth::login))
         .route("/auth/refresh", post(auth::refresh))
         .route("/agents", get(handlers::agents::list))
+        .route("/agents/install", post(handlers::install::create))
         .route("/dashboard/config", get(handlers::dashboard::config))
         .with_state(state.clone());
 
@@ -123,6 +124,7 @@ impl Modify for SecurityAddon {
         auth::login,
         auth::refresh,
         handlers::agents::list,
+        handlers::install::create,
         handlers::dashboard::config,
     ),
     components(schemas(
@@ -131,6 +133,8 @@ impl Modify for SecurityAddon {
         auth::LoginResponse,
         auth::RefreshRequest,
         handlers::agents::AgentDto,
+        handlers::install::InstallRequest,
+        handlers::install::InstallResponse,
         handlers::dashboard::DashboardConfigDto,
         handlers::dashboard::AutoRefreshDto,
         handlers::dashboard::SessionDto,
@@ -140,6 +144,7 @@ impl Modify for SecurityAddon {
         (name = "health",    description = "Liveness/readiness checks"),
         (name = "auth",      description = "Authentication: login + refresh"),
         (name = "agents",    description = "Agent registry"),
+        (name = "install",   description = "Wazuh-flow agent installer tokens"),
         (name = "dashboard", description = "Dashboard preferences"),
     )
 )]

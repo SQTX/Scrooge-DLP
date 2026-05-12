@@ -47,6 +47,17 @@ pub struct Claims {
     pub iat: i64,
 }
 
+impl Claims {
+    /// Zwraca `ApiError::Forbidden` jeśli rola != `admin`.
+    pub fn require_admin(&self) -> Result<(), ApiError> {
+        if self.role == "admin" {
+            Ok(())
+        } else {
+            Err(ApiError::Forbidden)
+        }
+    }
+}
+
 /// Extractor — zwraca `Claims` z poprawnego Bearer token'a.
 #[axum::async_trait]
 impl FromRequestParts<AppState> for Claims {
