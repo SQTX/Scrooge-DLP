@@ -3,7 +3,7 @@
 > **Stan na:** 2026-05-12
 > **Branch:** `main` (worktree `claude/unruffled-jennings-c55c25` przed merge'm)
 > **Status:** ✅ **MILESTONE 1 COMPLETE** + bonusy + **Sub-faza 1A** (Release CI) + **Sub-faza 1B** (Install API) + **Sub-faza 1D** (Dashboard wizard) **COMPLETE**.
-> **Aktualnie:** Wazuh-flow domknięty backendowo + UI-owo. Otwarta tylko Sub-faza 1C (macOS .pkg + Windows .msi — wymagają code signing) + E2E test na żywym Ubuntu.
+> **Aktualnie:** Wazuh-flow domknięty backendowo + UI-owo dla Linux. Otwarta Sub-faza 1C: macOS + Windows installer **przez curl-flow** (one-liner, nie klikane `.pkg`/`.msi`) — projekt jest GPLv2 open-source, **NIE kupujemy code signing**. Plus E2E test na żywym Ubuntu.
 
 ---
 

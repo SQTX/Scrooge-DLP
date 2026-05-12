@@ -49,7 +49,7 @@ sam się instaluje i zarejestruje. Tak jak Wazuh.
 - [x] Upload wszystkich artifacts do GitHub Release on tag
 - [x] **Zweryfikowano `v0.1.0-rc3`** — `.deb` instalowany przez `apt install` na Ubuntu 24.04
 - [x] Runner downgrade na `ubuntu-22.04*` w build + package-linux jobs (broader glibc compat: 22.04 + 24.04 + nowsze)
-- [ ] Packaging macOS: `.pkg` przez pkgbuild (Sub-faza 1C — wymaga code signing)
+- ~~Packaging macOS `.pkg` / Windows `.msi`~~ — **NIE robimy**, projekt jest open-source bez code signing. macOS/Windows dystrybuujemy przez curl-flow (Sub-faza 1C), nie klikane installery.
 
 ### Sub-faza 1B — Install API ✅ DONE
 - [x] `POST /api/v1/agents/install` — generuje token (max_uses=1, 24h) + zwraca one-liner
@@ -60,11 +60,31 @@ sam się instaluje i zarejestruje. Tak jak Wazuh.
 - [x] Skrypt obsługuje Debian/Ubuntu (.deb) i RHEL-family (.rpm) — detect z `/etc/os-release`
 - [ ] **Pełen E2E**: faktyczne `curl … | sudo bash` na czystym Ubuntu (lokalnie tylko bash -n syntax check)
 
-### Sub-faza 1C — Installer scripts
-- [ ] `deploy/installers/install-linux.sh` — detect arch, download binary, systemd unit, config
-- [ ] `deploy/installers/install-macos.sh` — launchd plist + .pkg fallback
-- [ ] `deploy/installers/install-windows.ps1` — PowerShell, Windows service
-- [ ] Test każdy installer ręcznie na świeżej VM/maszynie
+### Sub-faza 1C — macOS / Windows installer (curl-flow, NO code signing)
+
+> Projekt jest GPLv2 open-source — nie kupujemy Apple Developer ID ($99/rok)
+> ani Windows Code Signing Cert ($200-700/rok). Zamiast klikanych `.pkg`/`.msi`
+> dystrybuujemy przez **one-liner**: `curl install.sh | sudo bash`. Quarantine
+> xattr / SmartScreen patrzą tylko na pliki pobrane przez browser/Explorer —
+> binarka skopiowana przez curl/wget i uruchomiona przez launchd/sc.exe nie
+> jest blokowana.
+
+- **Linux installer już działa** (`/api/v1/install.sh`, Sub-faza 1B). To źródło prawdy dla logiki.
+- [ ] Rozszerz handler `install::script` o `target_os=macos` — nowy template `install_macos.sh.tpl`:
+  - Detect arch (`uname -m` → `x86_64` lub `arm64`)
+  - Pobierz tarball z GitHub Releases (`scrooge-agent-{x86_64|aarch64}-apple-darwin.tar.gz`)
+  - Rozpakuj do `/usr/local/bin/scrooge-agent`
+  - Stwórz launchd plist `/Library/LaunchDaemons/com.sqtx.scrooge-agent.plist`
+  - `launchctl load -w` plist
+- [ ] Rozszerz o `target_os=windows` — nowy template `install_windows.ps1.tpl`:
+  - PowerShell, sprawdź `[Environment]::Is64BitOperatingSystem`
+  - `Invoke-WebRequest` zipa z GitHub Releases
+  - `Expand-Archive` do `C:\Program Files\ScroogeDLP\`
+  - `New-Service` (lub `sc.exe create`) jako Windows service, auto-start
+  - One-liner: `iwr -UseBasicParsing https://.../install.ps1?token=... | iex`
+- [ ] POST `/api/v1/agents/install` — zdejmij `disabled` z `macos`/`windows` w response gdy templaty są gotowe; dashboard wizard sam się obudzi
+- [ ] Pełen E2E na czystym macOS host + Windows VM (UTM jest na razie tylko Linux)
+- [ ] README sekcja „Why no signed installers" — żeby user nie pytał
 
 ### Sub-faza 1D — Dashboard wizard ✅ DONE
 - [x] „Add agent" modal: dropdown OS (linux aktywny; macos/windows disabled) + opcjonalny description
