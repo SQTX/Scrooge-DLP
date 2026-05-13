@@ -515,14 +515,40 @@
       }
     });
 
+    async function copyToClipboard(text) {
+      // navigator.clipboard wymaga secure context (HTTPS lub localhost). Dla
+      // dashboardu serwowanego po HTTP po IP (typowy install API setup)
+      // fallback'ujemy do execCommand z ukrytym <textarea>.
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (_) { /* fallthrough to execCommand */ }
+      }
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, text.length); // iOS quirk
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch (_) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
     $('install-copy-btn').addEventListener('click', async () => {
       const cmd = $('install-command').textContent;
-      try {
-        await navigator.clipboard.writeText(cmd);
-        toast('One-liner skopiowany do schowka');
-      } catch (err) {
-        toast('Copy failed: ' + err.message);
-      }
+      const ok = await copyToClipboard(cmd);
+      toast(ok
+        ? 'One-liner skopiowany do schowka'
+        : 'Copy failed — zaznacz tekst myszką i Ctrl+C');
     });
 
     // ── Load agents ─────────────────────────────────────────────────
