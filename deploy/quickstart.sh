@@ -5,14 +5,19 @@
 #
 # Wykonuje:
 #   1. Sprawdza Docker + docker compose
-#   2. Generuje CA + manager server cert (przez `scroogectl init-ca` w build stage)
-#   3. Generuje JWT secret + Postgres password (random 32B)
-#   4. Pisze `.env` + `manager.yaml` z wartościami
-#   5. `docker compose build` + `up -d` (manager + postgres)
-#   6. Czeka aż manager będzie healthy
-#   7. Tworzy admin user (interactive password prompt)
-#   8. Generuje pierwszy enrollment token
-#   9. Drukuje URL'e do Swagger UI + gRPC + token
+#   2. Pyta o: publiczny adres managera + admin username + admin password
+#      (wszystko upfront, żeby nie blokować się w połowie buildu)
+#   3. Builduje obraz scrooge-manager (multi-stage z cargo-chef)
+#   4. Generuje CA + manager server cert (via scroogectl init-ca)
+#   5. Generuje JWT secret + Postgres password (random 32B w .env)
+#   6. Pisze manager.yaml (host + JWT + public_* + agent_release_tag)
+#   7. `docker compose up -d` (manager + postgres)
+#   8. Czeka aż manager będzie healthy (curl /health)
+#   9. Bootstrap admin user
+#  10. Drukuje URL-e + dane logowania
+#
+# Non-interactive mode: ustaw zmienne MANAGER_PUBLIC_ADDR, ADMIN_USERNAME,
+# ADMIN_PASSWORD przed wywołaniem skryptu — wtedy nic nie pyta.
 
 set -euo pipefail
 
@@ -50,7 +55,68 @@ docker compose version >/dev/null 2>&1 || err "'docker compose' subcommand not a
 ok "docker $(docker --version | awk '{print $3}' | tr -d ',') ready"
 
 # ──────────────────────────────────────────────────────────────────────────
-# 2. Build image (potrzebne żeby scroogectl init-ca działał)
+# 2. Interaktywne pytania (WSZYSTKIE UPFRONT)
+#
+# Pytamy o wszystko zanim ruszymy build, żeby user nie czekał 10 min na
+# obraz, a potem dopiero dowiedział się że musi wprowadzić hasło. Każde
+# pytanie ma env-var override dla CI / non-interactive mode.
+# ──────────────────────────────────────────────────────────────────────────
+echo ""
+say "konfiguracja (wszystkie wartości można też podać przez env vars)"
+echo ""
+
+# 2a. Publiczny adres managera (hostname lub IP).
+if [ -z "${MANAGER_PUBLIC_ADDR:-}" ]; then
+    DEFAULT_ADDR="$(hostname -f 2>/dev/null || hostname)"
+    read -r -p "  publiczny adres managera (hostname lub IP) [$DEFAULT_ADDR]: " MANAGER_PUBLIC_ADDR
+    MANAGER_PUBLIC_ADDR="${MANAGER_PUBLIC_ADDR:-$DEFAULT_ADDR}"
+fi
+
+# Czy `MANAGER_PUBLIC_ADDR` to IP czy hostname — SAN ma osobno IP: i DNS:.
+if [[ "$MANAGER_PUBLIC_ADDR" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    SAN_ENTRY="$MANAGER_PUBLIC_ADDR"   # init-ca wykryje IP po format'cie
+    PUBLIC_KIND="IP"
+else
+    SAN_ENTRY="$MANAGER_PUBLIC_ADDR"
+    PUBLIC_KIND="DNS"
+fi
+REST_SCHEMA="${REST_SCHEMA:-$([ "$PUBLIC_KIND" = "IP" ] && echo http || echo https)}"
+
+# 2b. Admin username.
+if [ -z "${ADMIN_USERNAME:-}" ]; then
+    read -r -p "  admin username [admin]: " ADMIN_USERNAME
+    ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
+fi
+
+# 2c. Admin password — min 8 znaków, confirm.
+if [ -z "${ADMIN_PASSWORD:-}" ]; then
+    while true; do
+        read -rs -p "  admin password (min 8 chars): " ADMIN_PASSWORD && echo
+        if [ "${#ADMIN_PASSWORD}" -lt 8 ]; then
+            warn "za krótkie — minimum 8 znaków"; continue
+        fi
+        read -rs -p "  admin password (confirm):    " ADMIN_PASSWORD2 && echo
+        if [ "$ADMIN_PASSWORD" = "$ADMIN_PASSWORD2" ]; then
+            break
+        fi
+        warn "hasła nie pasują — spróbuj jeszcze raz"
+    done
+else
+    if [ "${#ADMIN_PASSWORD}" -lt 8 ]; then
+        err "ADMIN_PASSWORD env var ma mniej niż 8 znaków"
+    fi
+fi
+
+# Podsumowanie konfiguracji — user widzi co zatwierdza.
+echo ""
+ok "konfiguracja zebrana:"
+echo "    publiczny adres:  $MANAGER_PUBLIC_ADDR ($PUBLIC_KIND, schema=$REST_SCHEMA)"
+echo "    admin username:   $ADMIN_USERNAME"
+echo "    admin password:   [hidden, ${#ADMIN_PASSWORD} znaków]"
+echo ""
+
+# ──────────────────────────────────────────────────────────────────────────
+# 3. Build image
 #
 # UŻYWAMY `docker build` bezpośrednio (nie `docker compose build`) — compose
 # parsuje całą definicję, w tym `${POSTGRES_PASSWORD:?…}` validation z
@@ -64,34 +130,9 @@ docker build \
 ok "image built"
 
 # ──────────────────────────────────────────────────────────────────────────
-# 3. CA + server cert (chyba że już są)
+# 4. CA + server cert (chyba że już są)
 # ──────────────────────────────────────────────────────────────────────────
 mkdir -p "$CERTS_DIR"
-
-# ──────────────────────────────────────────────────────────────────────────
-# Publiczny adres managera (gdzie agenci sie laczy).
-# Akceptuje hostname (FQDN/short) albo IP. Trafia do cert.SAN i do
-# `manager.yaml` (server.public_*) — bez tego install API zwroci 503.
-# ──────────────────────────────────────────────────────────────────────────
-if [ -z "${MANAGER_PUBLIC_ADDR:-}" ]; then
-    DEFAULT_ADDR="$(hostname -f 2>/dev/null || hostname)"
-    read -r -p "  publiczny adres managera (hostname lub IP) [$DEFAULT_ADDR]: " MANAGER_PUBLIC_ADDR
-    MANAGER_PUBLIC_ADDR="${MANAGER_PUBLIC_ADDR:-$DEFAULT_ADDR}"
-fi
-
-# Czy `MANAGER_PUBLIC_ADDR` jest IP czy hostname'm? SAN ma osobne IP: i DNS:.
-if [[ "$MANAGER_PUBLIC_ADDR" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-    SAN_ENTRY="$MANAGER_PUBLIC_ADDR"  # init-ca wykryje IP po format'cie
-    PUBLIC_KIND="IP"
-else
-    SAN_ENTRY="$MANAGER_PUBLIC_ADDR"
-    PUBLIC_KIND="DNS"
-fi
-
-# Schema dla REST URL. http jeśli IP, https jeśli FQDN (zalozenie: reverse
-# proxy obsluguje TLS dla domeny). Override przez REST_SCHEMA.
-REST_SCHEMA="${REST_SCHEMA:-$([ "$PUBLIC_KIND" = "IP" ] && echo http || echo https)}"
-
 if [ -f "$CERTS_DIR/ca.pem" ] && [ -f "$CERTS_DIR/server.pem" ]; then
     warn "CA + server cert już istnieją w $CERTS_DIR — używam ich (delete i odpal ponownie żeby zregenerować)"
 else
@@ -113,7 +154,7 @@ else
 fi
 
 # ──────────────────────────────────────────────────────────────────────────
-# 4. Env vars (random secrets w .env, podstawiamy w manager.yaml)
+# 5. Env vars (random secrets w .env, podstawiamy w manager.yaml)
 # ──────────────────────────────────────────────────────────────────────────
 ENV_FILE="$DOCKER_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -159,53 +200,43 @@ chmod 600 "$TARGET"
 ok "manager.yaml gotowy (public_grpc=$PUBLIC_GRPC, public_rest=$PUBLIC_REST, release=$AGENT_RELEASE_TAG)"
 
 # ──────────────────────────────────────────────────────────────────────────
-# 5. Up
+# 6. Up
 # ──────────────────────────────────────────────────────────────────────────
 say "starting stack (docker compose up -d)…"
 docker compose -f "$DOCKER_DIR/docker-compose.yml" --env-file "$ENV_FILE" up -d
 ok "containers started"
 
 # ──────────────────────────────────────────────────────────────────────────
-# 6. Wait for health
+# 7. Wait for health
+#
+# Healthcheck uzywa curl wewnatrz kontenera (sprawdza GET /health). Jezeli
+# curl odpowiada 200, manager jest faktycznie ready do uzycia, a nie tylko
+# proces ze startuje. start_period=5s + interval 10s — pierwsze sprawdzenie
+# po 5-15s.
 # ──────────────────────────────────────────────────────────────────────────
-say "waiting for manager to be healthy (max 60s)…"
-for i in $(seq 1 60); do
-    if docker inspect --format '{{.State.Health.Status}}' scrooge-manager 2>/dev/null | grep -q healthy; then
-        ok "manager healthy after ${i}s"
-        break
-    fi
+say "waiting for manager to be healthy (max 120s)…"
+for i in $(seq 1 120); do
+    STATUS="$(docker inspect --format '{{.State.Health.Status}}' scrooge-manager 2>/dev/null || echo unknown)"
+    case "$STATUS" in
+        healthy)
+            ok "manager healthy after ${i}s"
+            break
+            ;;
+        unhealthy)
+            err "manager unhealthy — sprawdź 'docker compose -f $DOCKER_DIR/docker-compose.yml logs manager'"
+            ;;
+    esac
     sleep 1
-    [ "$i" = "60" ] && err "manager nie wystartował w 60s — sprawdź 'docker compose -f $DOCKER_DIR/docker-compose.yml logs manager'"
+    [ "$i" = "120" ] && err "manager nie wystartował w 120s — sprawdź 'docker compose -f $DOCKER_DIR/docker-compose.yml logs manager'"
 done
 
 # ──────────────────────────────────────────────────────────────────────────
-# 7. Bootstrap admin (interactive)
+# 8. Bootstrap admin (już mamy ADMIN_USERNAME + ADMIN_PASSWORD z section 2)
 # ──────────────────────────────────────────────────────────────────────────
-say "bootstrap admin user"
-read -r -p "  username [admin]: " ADMIN_USER
-ADMIN_USER="${ADMIN_USER:-admin}"
-while true; do
-    read -rs -p "  password (min 8 chars): " ADMIN_PASS && echo
-    if [ "${#ADMIN_PASS}" -lt 8 ]; then
-        warn "za krótkie — minimum 8 znaków"; continue
-    fi
-    read -rs -p "  password (confirm):    " ADMIN_PASS2 && echo
-    if [ "$ADMIN_PASS" = "$ADMIN_PASS2" ]; then
-        break
-    fi
-    warn "hasła nie pasują — spróbuj jeszcze raz"
-done
-
+say "bootstrap admin user '$ADMIN_USERNAME'"
 docker compose -f "$DOCKER_DIR/docker-compose.yml" exec -T \
-    -e ADMIN_PASSWORD="$ADMIN_PASS" \
-    manager scroogectl bootstrap-admin --username "$ADMIN_USER"
-
-# ──────────────────────────────────────────────────────────────────────────
-# 8. Pierwszy enrollment token
-# ──────────────────────────────────────────────────────────────────────────
-say "generating first enrollment token (30 days)…"
-TOKEN=$(docker compose -f "$DOCKER_DIR/docker-compose.yml" exec -T manager \
-    scroogectl gen-token --description "quickstart bootstrap" 2>/dev/null | head -1)
+    -e ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+    manager scroogectl bootstrap-admin --username "$ADMIN_USERNAME"
 
 # ──────────────────────────────────────────────────────────────────────────
 # 9. Podsumowanie
@@ -213,16 +244,17 @@ TOKEN=$(docker compose -f "$DOCKER_DIR/docker-compose.yml" exec -T manager \
 echo ""
 ok "ScroogeDLP gotowy do użycia!"
 echo ""
-echo "  Swagger UI:    http://localhost:${MANAGER_REST_PORT:-55000}/api/v1/docs"
-echo "  REST API:      http://localhost:${MANAGER_REST_PORT:-55000}/api/v1"
-echo "  gRPC (agenci): localhost:${MANAGER_GRPC_PORT:-5443}"
-echo "  Admin:         $ADMIN_USER"
+echo "  Dashboard:     ${REST_SCHEMA}://${MANAGER_PUBLIC_ADDR}:${MANAGER_REST_PORT:-55000}"
+echo "  Swagger UI:    ${REST_SCHEMA}://${MANAGER_PUBLIC_ADDR}:${MANAGER_REST_PORT:-55000}/api/v1/docs"
+echo "  REST API:      ${REST_SCHEMA}://${MANAGER_PUBLIC_ADDR}:${MANAGER_REST_PORT:-55000}/api/v1"
+echo "  gRPC (agenci): ${MANAGER_PUBLIC_ADDR}:${MANAGER_GRPC_PORT:-5443}"
 echo ""
-echo "  Pierwszy enrollment token (do agent.yaml):"
-echo "    $TOKEN"
+echo "  Login:    $ADMIN_USERNAME / [hasło które właśnie ustawiłeś]"
 echo ""
-echo "  CA cert dla agentów: $CERTS_DIR/ca.pem"
-echo "  (kopiuj na każdą maszynę z agentem)"
+echo "  Dodaj pierwszego agenta:"
+echo "    1. Otwórz dashboard w przeglądarce"
+echo "    2. Klik '+ Install agent' → wybierz OS → 'Generate one-liner'"
+echo "    3. Skopiuj one-liner i wklej na endpoincie jako root"
 echo ""
 echo "  Logi managera:  docker compose -f $DOCKER_DIR/docker-compose.yml logs -f manager"
 echo "  Stop:           docker compose -f $DOCKER_DIR/docker-compose.yml down"

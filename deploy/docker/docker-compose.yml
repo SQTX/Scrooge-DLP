@@ -48,11 +48,14 @@ services:
       - ./manager.yaml:/etc/scrooge/manager.yaml:ro
       - ./certs:/var/lib/scrooge/certs:ro
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/55000 && echo -e 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q '200 OK'"]
-      interval: 30s
+      # /bin/sh w slim image = dash, ktory NIE wspiera bash-style
+      # `exec 3<>/dev/tcp/...`. Curl jest zainstalowany w runtime stage
+      # specjalnie dla tego healthcheck'a.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:55000/health"]
+      interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 10s
+      retries: 6
+      start_period: 5s
     networks:
       - scrooge
 
