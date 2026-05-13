@@ -24,8 +24,8 @@ say "cargo build --release -p scrooge-agent-bin"
 [ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
 cargo build --release -p scrooge-agent-bin
 
-say "install binary do /usr/local/bin/"
-sudo install -m 0755 target/release/scrooge-agent /usr/local/bin/scrooge-agent
+say "install binary do /usr/bin/"
+sudo install -m 0755 target/release/scrooge-agent /usr/bin/scrooge-agent
 ok "binary updated"
 
 say "restart scrooge-agent.service"

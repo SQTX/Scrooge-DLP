@@ -17,7 +17,7 @@ Type=simple
 User=scrooge
 Group=scrooge
 
-ExecStart=/usr/local/bin/scrooge-agent \
+ExecStart=/usr/bin/scrooge-agent \
     --config /etc/scrooge/agent.yaml \
     --log-format json
 

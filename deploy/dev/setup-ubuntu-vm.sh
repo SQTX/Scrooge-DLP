@@ -201,7 +201,7 @@ $(say "Setup gotowy! Co dalej:")
 5. Pierwszy build + start agenta na VM:
      cd ${CLONE_DIR}
      cargo build --release -p scrooge-agent-bin
-     sudo install -m 0755 target/release/scrooge-agent /usr/local/bin/
+     sudo install -m 0755 target/release/scrooge-agent /usr/bin/
      sudo systemctl enable --now scrooge-agent
      sudo journalctl -u scrooge-agent -f
 
