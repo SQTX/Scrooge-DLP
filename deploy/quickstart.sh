@@ -96,10 +96,16 @@ if [ -f "$CERTS_DIR/ca.pem" ] && [ -f "$CERTS_DIR/server.pem" ]; then
     warn "CA + server cert już istnieją w $CERTS_DIR — używam ich (delete i odpal ponownie żeby zregenerować)"
 else
     say "generating CA + manager server cert via scroogectl init-ca…"
+    # `--entrypoint scroogectl` jest konieczne bo Dockerfile.manager ma
+    # ENTRYPOINT na 'scrooge-manager' (dla production usage); bez tego
+    # docker run interpretuje 'scroogectl init-ca' jako argumenty do
+    # scrooge-manager binarki, ktora rzuca:
+    #   error: unexpected argument 'scroogectl' found
     docker run --rm \
+        --entrypoint scroogectl \
         -v "$CERTS_DIR:/out" \
         scrooge-manager:local \
-        scroogectl init-ca \
+        init-ca \
             --output /out \
             --server-cn "$MANAGER_PUBLIC_ADDR" \
             --san "localhost,scrooge-manager,127.0.0.1,$SAN_ENTRY"
