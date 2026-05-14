@@ -47,45 +47,63 @@ random_hex() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────
-# 1. Wymagania
+# 1. Wymagania — auto-install Dockera jesli brak, auto-relog jesli user
+#    nie ma jeszcze swiezej grupy 'docker' w shellu.
+#
+# Skip auto-install: SKIP_DOCKER_INSTALL=1 ./quickstart.sh
 # ──────────────────────────────────────────────────────────────────────────
 say "checking requirements"
-if ! command -v docker >/dev/null 2>&1; then
-    cat >&2 <<'EOF'
-✗ docker nie znaleziony w PATH.
 
-  Zainstaluj Docker (oficjalna metoda, dziala na Ubuntu/Debian/RHEL):
-
+install_docker() {
+    say "instaluje Docker przez oficjalny installer (get.docker.com)…"
     curl -fsSL https://get.docker.com | sudo sh
+    if ! id -nG "$USER" | grep -qw docker; then
+        say "dodaje $USER do grupy 'docker'…"
+        sudo usermod -aG docker "$USER"
+    fi
+    ok "Docker zainstalowany"
+}
+
+if ! command -v docker >/dev/null 2>&1; then
+    if [ "${SKIP_DOCKER_INSTALL:-0}" = "1" ]; then
+        err "docker not found in PATH (SKIP_DOCKER_INSTALL=1 — zainstaluj recznie)"
+    fi
+    warn "Docker nie znaleziony w PATH."
+    if [ ! -t 0 ]; then
+        err "non-interactive (stdin not a tty) — odpal recznie: curl -fsSL https://get.docker.com | sudo sh"
+    fi
+    read -r -p "  zainstalowac Docker przez get.docker.com? [Y/n]: " ans
+    case "${ans,,}" in
+        ""|y|yes|t|tak) install_docker ;;
+        *) err "anulowane przez uzytkownika" ;;
+    esac
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+    err "'docker compose' (v2) subcommand nie dziala — Ubuntu apt 'docker-compose-plugin' nie wystarczy, odpal: curl -fsSL https://get.docker.com | sudo sh"
+fi
+
+if ! docker info >/dev/null 2>&1; then
+    # Daemon dziala, ale user nie ma uprawnien. Czy user jest w grupie docker?
+    if id -nG "$USER" | grep -qw docker; then
+        # Tak — tylko bieżący shell jeszcze tego nie wie. Re-exec w grupie
+        # docker przez `sg`, zeby user nie musial sie wylogowywać.
+        warn "user '$USER' jest w grupie 'docker' ale shell tego nie zna — re-launch w nowej grupie…"
+        SCRIPT_PATH="$(readlink -f "$0")"
+        exec sg docker -c "$SCRIPT_PATH $*"
+    else
+        cat >&2 <<EOF
+✗ Docker daemon dziala, ale '$USER' nie ma uprawnien.
+
+  Dodaj sie do grupy 'docker' (raz w zyciu):
     sudo usermod -aG docker $USER
     newgrp docker
 
-  Potem odpal ./deploy/quickstart.sh ponownie.
-EOF
-    exit 1
-fi
-if ! docker compose version >/dev/null 2>&1; then
-    cat >&2 <<'EOF'
-✗ 'docker compose' subcommand nie dziala (potrzebny Docker Compose v2).
-
-  Pakiet 'docker-compose-plugin' z Ubuntu apt repo NIE wystarczy — uzyj
-  oficjalnego instalatora:
-
-    curl -fsSL https://get.docker.com | sudo sh
-EOF
-    exit 1
-fi
-if ! docker info >/dev/null 2>&1; then
-    cat >&2 <<'EOF'
-✗ Docker daemon dziala, ale uzytkownik nie ma uprawnien.
-
-  Albo dodaj sie do grupy 'docker' i przeloguj:
-    sudo usermod -aG docker $USER && newgrp docker
-
-  Albo odpal quickstart przez sudo:
+  Lub odpal quickstart przez sudo:
     sudo -E ./deploy/quickstart.sh
 EOF
-    exit 1
+        exit 1
+    fi
 fi
 ok "docker $(docker --version | awk '{print $3}' | tr -d ',') ready"
 
