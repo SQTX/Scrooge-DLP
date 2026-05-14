@@ -50,8 +50,43 @@ random_hex() {
 # 1. Wymagania
 # ──────────────────────────────────────────────────────────────────────────
 say "checking requirements"
-command -v docker >/dev/null 2>&1 || err "docker not found in PATH"
-docker compose version >/dev/null 2>&1 || err "'docker compose' subcommand not available"
+if ! command -v docker >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+✗ docker nie znaleziony w PATH.
+
+  Zainstaluj Docker (oficjalna metoda, dziala na Ubuntu/Debian/RHEL):
+
+    curl -fsSL https://get.docker.com | sudo sh
+    sudo usermod -aG docker $USER
+    newgrp docker
+
+  Potem odpal ./deploy/quickstart.sh ponownie.
+EOF
+    exit 1
+fi
+if ! docker compose version >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+✗ 'docker compose' subcommand nie dziala (potrzebny Docker Compose v2).
+
+  Pakiet 'docker-compose-plugin' z Ubuntu apt repo NIE wystarczy — uzyj
+  oficjalnego instalatora:
+
+    curl -fsSL https://get.docker.com | sudo sh
+EOF
+    exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+    cat >&2 <<'EOF'
+✗ Docker daemon dziala, ale uzytkownik nie ma uprawnien.
+
+  Albo dodaj sie do grupy 'docker' i przeloguj:
+    sudo usermod -aG docker $USER && newgrp docker
+
+  Albo odpal quickstart przez sudo:
+    sudo -E ./deploy/quickstart.sh
+EOF
+    exit 1
+fi
 ok "docker $(docker --version | awk '{print $3}' | tr -d ',') ready"
 
 # ──────────────────────────────────────────────────────────────────────────
