@@ -24,7 +24,7 @@ server:
   # z ktorego pobierane sa .deb/.rpm — wersja MUSI matchowac binariom.
   public_grpc_endpoint: "manager.example.com:5443"
   public_rest_base_url: "https://manager.example.com"
-  agent_release_tag:    "v0.1.0-rc3"
+  agent_release_tag:    "v0.1.0-rc4"
 
 database:
   # `postgres` to nazwa serwisu w docker-compose (DNS w bridge network).
