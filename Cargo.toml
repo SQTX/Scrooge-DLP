@@ -120,6 +120,9 @@ thiserror = "2"
 uuid        = { version = "1",   features = ["v4", "serde"] }
 chrono      = { version = "0.4", features = ["serde"] }
 regex       = "1"
+# MessagePack serializer — używany do kompilacji polityk YAML do compact
+# binary form (delta-push do agentów, hashowanie deterministyczne).
+rmp-serde   = "1.3"
 bytes       = "1"
 rand        = "0.8"
 clap        = { version = "4",   features = ["derive", "env"] }
