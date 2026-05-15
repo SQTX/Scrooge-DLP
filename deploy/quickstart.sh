@@ -37,6 +37,23 @@ ok()    { printf "\033[32m✔ %s\033[0m\n" "$*"; }
 warn()  { printf "\033[33m⚠ %s\033[0m\n" "$*"; }
 err()   { printf "\033[31m✗ %s\033[0m\n" "$*"; exit 1; }
 
+# Quickstart bywa uruchamiany przez `curl … | bash` (z install.sh bootstrap)
+# — wtedy stdin pipe'a NIE jest tty, ale /dev/tty wciąż jest dostępne.
+# Funkcja `has_tty` pomaga zdecydować czy mozemy pytać interaktywnie.
+has_tty() { [ -e /dev/tty ] && [ -r /dev/tty ] && [ -w /dev/tty ]; }
+ask() {
+    # Wrapper na `read -r -p` ktory czyta z /dev/tty zamiast stdin.
+    # Uzycie: ask VAR_NAME "prompt: "
+    local __var="$1" __prompt="$2"
+    read -r -p "$__prompt" "$__var" </dev/tty
+}
+ask_silent() {
+    # Wrapper na `read -rs -p` ktory czyta z /dev/tty (dla haseł).
+    local __var="$1" __prompt="$2"
+    read -rs -p "$__prompt" "$__var" </dev/tty
+    echo
+}
+
 random_hex() {
     # 32 bajty hex (64 znaki) — używane dla jwt_secret i postgres password.
     if command -v openssl >/dev/null 2>&1; then
@@ -69,10 +86,10 @@ if ! command -v docker >/dev/null 2>&1; then
         err "docker not found in PATH (SKIP_DOCKER_INSTALL=1 — zainstaluj recznie)"
     fi
     warn "Docker nie znaleziony w PATH."
-    if [ ! -t 0 ]; then
-        err "non-interactive (stdin not a tty) — odpal recznie: curl -fsSL https://get.docker.com | sudo sh"
+    if ! has_tty; then
+        err "non-interactive (brak /dev/tty) — zainstaluj recznie: curl -fsSL https://get.docker.com | sudo sh"
     fi
-    read -r -p "  zainstalowac Docker przez get.docker.com? [Y/n]: " ans
+    ask ans "  zainstalowac Docker przez get.docker.com? [Y/n]: "
     case "${ans,,}" in
         ""|y|yes|t|tak) install_docker ;;
         *) err "anulowane przez uzytkownika" ;;
@@ -120,8 +137,9 @@ echo ""
 
 # 2a. Publiczny adres managera (hostname lub IP).
 if [ -z "${MANAGER_PUBLIC_ADDR:-}" ]; then
+    has_tty || err "non-interactive (brak /dev/tty) — ustaw MANAGER_PUBLIC_ADDR env var"
     DEFAULT_ADDR="$(hostname -f 2>/dev/null || hostname)"
-    read -r -p "  publiczny adres managera (hostname lub IP) [$DEFAULT_ADDR]: " MANAGER_PUBLIC_ADDR
+    ask MANAGER_PUBLIC_ADDR "  publiczny adres managera (hostname lub IP) [$DEFAULT_ADDR]: "
     MANAGER_PUBLIC_ADDR="${MANAGER_PUBLIC_ADDR:-$DEFAULT_ADDR}"
 fi
 
@@ -137,18 +155,20 @@ REST_SCHEMA="${REST_SCHEMA:-$([ "$PUBLIC_KIND" = "IP" ] && echo http || echo htt
 
 # 2b. Admin username.
 if [ -z "${ADMIN_USERNAME:-}" ]; then
-    read -r -p "  admin username [admin]: " ADMIN_USERNAME
+    has_tty || err "non-interactive (brak /dev/tty) — ustaw ADMIN_USERNAME env var"
+    ask ADMIN_USERNAME "  admin username [admin]: "
     ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
 fi
 
 # 2c. Admin password — min 8 znaków, confirm.
 if [ -z "${ADMIN_PASSWORD:-}" ]; then
+    has_tty || err "non-interactive (brak /dev/tty) — ustaw ADMIN_PASSWORD env var (min 8 znakow)"
     while true; do
-        read -rs -p "  admin password (min 8 chars): " ADMIN_PASSWORD && echo
+        ask_silent ADMIN_PASSWORD "  admin password (min 8 chars): "
         if [ "${#ADMIN_PASSWORD}" -lt 8 ]; then
             warn "za krótkie — minimum 8 znaków"; continue
         fi
-        read -rs -p "  admin password (confirm):    " ADMIN_PASSWORD2 && echo
+        ask_silent ADMIN_PASSWORD2 "  admin password (confirm):    "
         if [ "$ADMIN_PASSWORD" = "$ADMIN_PASSWORD2" ]; then
             break
         fi
