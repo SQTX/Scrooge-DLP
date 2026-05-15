@@ -23,7 +23,10 @@ set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/SQTX/Scrooge-DLP.git}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/Scrooge-DLP}"
-INSTALL_REF="${INSTALL_REF:-main}"
+# TEMP (Sub-faza 1E testing): default = dev żeby Wazuh-flow z mTLS dało
+# się testować bez PR dev → main. Po pomyślnym E2E i mergu PR, revert na
+# `main`. Override przez `INSTALL_REF=...` env w trybie produkcyjnym.
+INSTALL_REF="${INSTALL_REF:-dev}"
 
 say()  { printf '\033[36m▸ %s\033[0m\n' "$*"; }
 ok()   { printf '\033[32m✔ %s\033[0m\n' "$*"; }

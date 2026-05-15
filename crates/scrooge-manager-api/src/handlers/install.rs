@@ -421,7 +421,7 @@ mod tests {
         ScriptContext {
             manager_endpoint: "mgr.example.com:5443".to_string(),
             install_base_url: "https://mgr.example.com".to_string(),
-            release_tag: "v0.1.0-rc5".to_string(),
+            release_tag: "v0.1.0-rc6".to_string(),
             ca_cert_path: PathBuf::from("/tmp/ca.pem"),
         }
     }
@@ -441,7 +441,7 @@ mod tests {
         assert_no_placeholders(&out, "linux");
         assert!(out.contains("mgr.example.com:5443"));
         assert!(out.contains("TEST-TOKEN-1234"));
-        assert!(out.contains("v0.1.0-rc5"));
+        assert!(out.contains("v0.1.0-rc6"));
         assert!(out.contains(PACKAGE_VERSION));
     }
 
