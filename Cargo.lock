@@ -2469,6 +2469,7 @@ dependencies = [
  "http",
  "jsonwebtoken",
  "scrooge-common",
+ "scrooge-policy",
  "serde",
  "serde_json",
  "sha2",

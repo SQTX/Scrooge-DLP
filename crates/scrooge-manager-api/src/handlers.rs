@@ -9,3 +9,4 @@ pub mod agents;
 pub mod dashboard;
 pub mod health;
 pub mod install;
+pub mod policies;

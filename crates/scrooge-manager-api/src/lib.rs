@@ -59,6 +59,22 @@ pub fn router(state: AppState) -> Router {
         .route("/install.sh", get(handlers::install::script))
         .route("/install-macos.sh", get(handlers::install::script_macos))
         .route("/install.ps1", get(handlers::install::script_windows))
+        .route(
+            "/policies",
+            get(handlers::policies::list).post(handlers::policies::create),
+        )
+        .route(
+            "/policies/:name",
+            get(handlers::policies::get)
+                .put(handlers::policies::update)
+                .delete(handlers::policies::delete_),
+        )
+        .route("/policies/:name/history", get(handlers::policies::history))
+        .route(
+            "/policies/:name/rollback/:version",
+            post(handlers::policies::rollback),
+        )
+        .route("/policies/validate", post(handlers::policies::validate))
         .route("/dashboard/config", get(handlers::dashboard::config))
         .with_state(state.clone());
 
@@ -178,6 +194,14 @@ impl Modify for SecurityAddon {
         handlers::install::script,
         handlers::install::script_macos,
         handlers::install::script_windows,
+        handlers::policies::list,
+        handlers::policies::get,
+        handlers::policies::create,
+        handlers::policies::update,
+        handlers::policies::delete_,
+        handlers::policies::history,
+        handlers::policies::rollback,
+        handlers::policies::validate,
         handlers::dashboard::config,
     ),
     components(schemas(
@@ -188,6 +212,13 @@ impl Modify for SecurityAddon {
         handlers::agents::AgentDto,
         handlers::install::InstallRequest,
         handlers::install::InstallResponse,
+        handlers::policies::PolicySummaryDto,
+        handlers::policies::PolicyDto,
+        handlers::policies::PolicyHistoryEntryDto,
+        handlers::policies::CreatePolicyRequest,
+        handlers::policies::UpdatePolicyRequest,
+        handlers::policies::ValidateRequest,
+        handlers::policies::ValidateResponse,
         handlers::dashboard::DashboardConfigDto,
         handlers::dashboard::AutoRefreshDto,
         handlers::dashboard::SessionDto,
@@ -198,6 +229,7 @@ impl Modify for SecurityAddon {
         (name = "auth",      description = "Authentication: login + refresh"),
         (name = "agents",    description = "Agent registry"),
         (name = "install",   description = "Wazuh-flow agent installer tokens"),
+        (name = "policies",  description = "DLP policies CRUD + history + rollback + validate"),
         (name = "dashboard", description = "Dashboard preferences"),
     )
 )]

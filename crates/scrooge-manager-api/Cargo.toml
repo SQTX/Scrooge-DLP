@@ -12,6 +12,7 @@ homepage.workspace     = true
 
 [dependencies]
 scrooge-common = { path = "../scrooge-common" }
+scrooge-policy = { path = "../scrooge-policy" }
 
 axum.workspace              = true
 axum-server.workspace       = true
