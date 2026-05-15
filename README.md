@@ -7,15 +7,42 @@
 ale skupiony wyłącznie na DLP. Integruje się z Wazuh przez forwarding syslog
 (RFC 5424/5425) dla korelacji SIEM.
 
-> ⚠️ **Status:** Wczesna faza rozwoju (MVP — Milestone 1). NIE production-ready.
-> Pełny plan i roadmapa: [`PROJECT_BRIEF.md`](PROJECT_BRIEF.md).
+> ⚠️ **Status:** Faza 1 (Wazuh-flow Distribution) ukończona — manager+agent+dashboard+mTLS+HTTPS działają E2E. Funkcje DLP (clipboard/USB/network monitoring, polityki YAML) dochodzą w Phase 2+. NIE production-ready.
+> Pełny plan: [`PROJECT_BRIEF.md`](PROJECT_BRIEF.md), roadmapa: [`ROADMAP.md`](ROADMAP.md).
+
+## Quick install
+
+Jeden one-liner na czystej VM Debian/Ubuntu (manager):
+
+```bash
+curl -fsSL https://github.com/SQTX/Scrooge-DLP/raw/main/deploy/install.sh | bash
+```
+
+Skrypt sam ogarnie:
+- Auto-instalacja Dockera (`get.docker.com`) gdy brak
+- Klon repo + checkout `main`
+- Interaktywne pytania: publiczny adres managera, admin username, admin hasło
+- Build obrazu managera (multi-stage cargo-chef, ~10 min jednorazowo)
+- Generacja Root CA + server cert (mTLS dla agentów + HTTPS dla dashboardu)
+- `docker compose up` (Postgres + manager), healthcheck, bootstrap admin
+
+Po zakończeniu dashboard pod `https://<ip>:55000` (self-signed cert → Advanced → Proceed jednorazowo w browserze).
+
+**Dodanie agenta:** w dashboardzie `+ Install agent` → Linux/macOS/Windows → Generate → skopiuj one-liner → wklej na endpoint jako root/admin. Agent enrolluje się automatycznie z `mTLS` (cert kryptograficznie powiązany z managerem przez Root CA).
+
+Env vars dla non-interactive setup (CI / Ansible):
+
+```bash
+MANAGER_PUBLIC_ADDR=192.168.1.10 ADMIN_USERNAME=admin ADMIN_PASSWORD=safehash123 \
+  curl -fsSL https://github.com/SQTX/Scrooge-DLP/raw/main/deploy/install.sh | bash
+```
 
 ## Komponenty
 
-- **`scrooge-agent`** — agent endpointowy dla Linux i macOS (Windows: stub w MVP).
-- **`scrooge-manager`** — serwer centralny (Docker + quickstart), gRPC + REST API.
-- **`scroogectl`** — CLI klient managera.
-- **`scrooge-dashboard`** — web UI (osobne repo, poza tym briefem).
+- **`scrooge-agent`** — agent endpointowy dla Linux, macOS, Windows (`.deb`/`.rpm`/tarball/`.zip` w GitHub Releases)
+- **`scrooge-manager`** — serwer centralny (Docker + quickstart), gRPC mTLS na `:5443` + HTTPS REST/dashboard na `:55000`
+- **`scroogectl`** — CLI klient managera (init-ca, migrate, bootstrap-admin, gen-token)
+- **Web dashboard** — embedded w binarce managera (vanilla HTML + Tailwind CDN), pod `https://<manager>:55000`
 
 ## Architektura (high-level)
 
