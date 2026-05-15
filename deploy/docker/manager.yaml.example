@@ -25,6 +25,11 @@ server:
   public_grpc_endpoint: "manager.example.com:5443"
   public_rest_base_url: "https://manager.example.com"
   agent_release_tag:    "v0.1.0-rc6"
+  # REST API HTTPS (Sub-faza 1F) — reuse'uje server cert co gRPC (jeden
+  # cert ma SAN dla obu portów). Quickstart wstawia te wartosci. Gdy
+  # oba puste, REST = plain HTTP (dev / kompat. wsteczna).
+  rest_tls_cert_path:   "/var/lib/scrooge/certs/server.pem"
+  rest_tls_key_path:    "/var/lib/scrooge/certs/server.key"
 
 database:
   # `postgres` to nazwa serwisu w docker-compose (DNS w bridge network).

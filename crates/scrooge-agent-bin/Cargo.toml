@@ -28,6 +28,7 @@ anyhow.workspace             = true
 clap.workspace               = true
 uuid.workspace               = true
 chrono.workspace             = true
+rustls.workspace             = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 scrooge-agent-linux = { path = "../scrooge-agent-linux" }

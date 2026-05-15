@@ -55,6 +55,10 @@ prost-types = "0.13"
 
 # HTTP / REST
 axum           = { version = "0.7", features = ["ws", "macros"] }
+# axum-server + rustls feature: REST API z TLS (HTTPS dla dashboardu).
+# Konfigurowalne przez manager.yaml `server.rest_tls_*` — gdy puste,
+# fallback do plain HTTP (kompatybilność wsteczna + tryb dev).
+axum-server    = { version = "0.7", features = ["tls-rustls"] }
 tower          = "0.5"
 tower-http     = { version = "0.6", features = ["trace", "cors", "compression-gzip"] }
 hyper          = "1"

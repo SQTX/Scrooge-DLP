@@ -151,7 +151,10 @@ else
     SAN_ENTRY="$MANAGER_PUBLIC_ADDR"
     PUBLIC_KIND="DNS"
 fi
-REST_SCHEMA="${REST_SCHEMA:-$([ "$PUBLIC_KIND" = "IP" ] && echo http || echo https)}"
+# Sub-faza 1F: REST API zawsze HTTPS (manager wystawia TLS z self-signed
+# cert podpisanym przez nasz Root CA). Override REST_SCHEMA=http tylko gdy
+# wyłączysz `rest_tls_*` w manager.yaml dla dev mode.
+REST_SCHEMA="${REST_SCHEMA:-https}"
 
 # 2b. Admin username.
 if [ -z "${ADMIN_USERNAME:-}" ]; then

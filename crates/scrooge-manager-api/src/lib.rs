@@ -73,18 +73,65 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Opcjonalna konfiguracja TLS dla REST API. Gdy `None`, manager nasłuchuje
+/// plain HTTP (dev mode / kompat. wsteczna). Gdy `Some`, HTTPS przez
+/// axum-server + rustls.
+#[derive(Debug, Clone)]
+pub struct RestTlsConfig {
+    pub cert_path: std::path::PathBuf,
+    pub key_path: std::path::PathBuf,
+}
+
 /// Startuje REST API na podanym `addr` i wraca po zakończeniu `shutdown`.
+///
+/// Gdy `tls` jest `Some`, wystawia HTTPS (rustls). Gdy `None`, plain HTTP.
 pub async fn serve(
     addr: SocketAddr,
     state: AppState,
+    tls: Option<RestTlsConfig>,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
     let app = router(state);
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    tracing::info!(addr = %addr, "REST API listening");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown)
+
+    if let Some(tls_cfg) = tls {
+        tracing::info!(addr = %addr, "REST API listening (HTTPS/TLS)");
+        let rustls_cfg = axum_server::tls_rustls::RustlsConfig::from_pem_file(
+            &tls_cfg.cert_path,
+            &tls_cfg.key_path,
+        )
         .await
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "loading REST TLS cert/key ({}, {}): {e}",
+                    tls_cfg.cert_path.display(),
+                    tls_cfg.key_path.display()
+                ),
+            )
+        })?;
+        let handle = axum_server::Handle::new();
+        let handle_for_shutdown = handle.clone();
+        tokio::spawn(async move {
+            shutdown.await;
+            // graceful_shutdown(None) = nieskończony grace period; dla
+            // dev wystarczy hard close po użytkowniku.
+            handle_for_shutdown.shutdown();
+        });
+        axum_server::bind_rustls(addr, rustls_cfg)
+            .handle(handle)
+            .serve(app.into_make_service())
+            .await
+    } else {
+        tracing::info!(
+            addr = %addr,
+            "REST API listening (plain HTTP — set server.rest_tls_* w manager.yaml dla HTTPS)"
+        );
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────

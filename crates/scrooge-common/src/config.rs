@@ -146,6 +146,16 @@ pub struct ManagerServerConfig {
     /// może domyślnie wskazywać na `latest` (po Sub-fazie 1B).
     #[serde(default)]
     pub agent_release_tag: Option<String>,
+
+    /// Cert dla REST API (HTTPS dashboard). Gdy oba pola ustawione, REST
+    /// nasłuchuje TLS. Quickstart reuse'uje te same `tls_cert_path` +
+    /// `tls_key_path` co gRPC — jeden cert z SAN dla manager IP/hostname
+    /// jest ważny dla obu portów (TLS chroni hostname, nie port).
+    /// Gdy puste → REST fallback do plain HTTP (dev mode / kompat. wsteczna).
+    #[serde(default)]
+    pub rest_tls_cert_path: Option<String>,
+    #[serde(default)]
+    pub rest_tls_key_path: Option<String>,
 }
 
 /// Sekcja `database:` — PostgreSQL.

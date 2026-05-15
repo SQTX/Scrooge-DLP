@@ -13,8 +13,12 @@ server:
   # Publiczne adresy + tag releasu dla install API (Sub-faza 1B). W dev
   # wskazuja loopback. Tag z GitHub Releases musi miec .deb/.rpm assets.
   public_grpc_endpoint: "127.0.0.1:5443"
-  public_rest_base_url: "http://127.0.0.1:55000"
+  public_rest_base_url: "https://127.0.0.1:55000"
   agent_release_tag:    "v0.1.0-rc6"
+  # REST API HTTPS (Sub-faza 1F) — reuse'uje server cert co gRPC (jeden
+  # cert ma SAN dla obu portów). Gdy puste, REST = plain HTTP.
+  rest_tls_cert_path:   "dev-certs/server.pem"
+  rest_tls_key_path:    "dev-certs/server.key"
 
 database:
   url:      "postgres://scrooge:scrooge-dev-password@localhost:5433/scrooge"

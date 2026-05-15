@@ -54,6 +54,13 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     telemetry::init(args.log_format);
 
+    // Rustls 0.23+ wymaga explicit wyboru CryptoProvider (process-wide,
+    // jednorazowo). Tonic używa własnego providera dla gRPC, ale
+    // axum-server::tls_rustls dla REST HTTPS wymaga tego setupu.
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("installing ring CryptoProvider for rustls");
+
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         config = %args.config.display(),
@@ -125,11 +132,25 @@ async fn main() -> anyhow::Result<()> {
         let _ = shutdown_tx.send(true);
     });
 
+    // REST TLS config: jeśli oba pola w manager.yaml ustawione → HTTPS,
+    // w przeciwnym razie plain HTTP (dev / kompat.).
+    let rest_tls = match (
+        config.server.rest_tls_cert_path.as_ref(),
+        config.server.rest_tls_key_path.as_ref(),
+    ) {
+        (Some(cert), Some(key)) => Some(scrooge_manager_api::RestTlsConfig {
+            cert_path: cert.into(),
+            key_path: key.into(),
+        }),
+        _ => None,
+    };
+
     // Spawn serwerów.
     tracing::info!(addr = %rest_addr, "REST API starting");
     let rest_task = tokio::spawn(scrooge_manager_api::serve(
         rest_addr,
         api_state,
+        rest_tls,
         rest_shutdown,
     ));
 

@@ -67,6 +67,12 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     telemetry::init(args.log_format);
 
+    // Rustls 0.23+ wymaga explicit wyboru CryptoProvider (process-wide).
+    // Agent używa rustls przez tonic dla gRPC enrollment + Stream (mTLS).
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("installing ring CryptoProvider for rustls");
+
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         config = %args.config.display(),

@@ -119,13 +119,27 @@ impl TargetOs {
 
     /// Renderuje one-liner gotowy do skopiowania. Linux/macOS używają bash'a,
     /// Windows — PowerShell przez `iwr … | iex`.
+    ///
+    /// **`-k` / disabled cert validation** — jednorazowy akceptowalny ryzyk
+    /// przy initial bootstrap. Manager używa cert podpisanego przez nasz
+    /// Root CA, ale endpoint nie ma tego CA w trust store. Po enrollment
+    /// agent ma już CA wbity (embedded w install.sh) i wszystkie kolejne
+    /// połączenia (gRPC) są mTLS z pełną weryfikacją. Identyczny pattern
+    /// co Wazuh agent install.
     fn one_liner(self, base: &str, token: &str) -> String {
         let path = self.script_path();
         match self {
             Self::Linux | Self::MacOs => {
-                format!("curl -fsSL '{base}{path}?token={token}' | sudo bash")
+                format!("curl -fsSLk '{base}{path}?token={token}' | sudo bash")
             },
-            Self::Windows => format!("iwr -UseBasicParsing '{base}{path}?token={token}' | iex"),
+            // PowerShell 5.1 (default Win10/11/Server) NIE wspiera
+            // `-SkipCertificateCheck` na `iwr` — musimy globalnie wyłączyć
+            // walidację w session. PS 6+ ma flag, ale dla kompat. z 5.1
+            // używamy ServicePointManager.
+            Self::Windows => format!(
+                "[Net.ServicePointManager]::ServerCertificateValidationCallback = {{$true}}; \
+                 iwr -UseBasicParsing '{base}{path}?token={token}' | iex"
+            ),
         }
     }
 }
@@ -483,11 +497,14 @@ mod tests {
         let mac = TargetOs::MacOs.one_liner(base, tok);
         let win = TargetOs::Windows.one_liner(base, tok);
 
-        assert!(lin.starts_with("curl"));
+        // Linux/macOS curl z -k (skip cert verify dla self-signed manager).
+        assert!(lin.starts_with("curl -fsSLk"));
         assert!(lin.contains("/install.sh"));
-        assert!(mac.starts_with("curl"));
+        assert!(mac.starts_with("curl -fsSLk"));
         assert!(mac.contains("/install-macos.sh"));
-        assert!(win.starts_with("iwr"));
+        // Windows: ServicePointManager bypass + iwr.
+        assert!(win.contains("ServerCertificateValidationCallback"));
+        assert!(win.contains("iwr"));
         assert!(win.contains("/install.ps1"));
         assert!(win.contains("| iex"));
     }
