@@ -63,7 +63,25 @@
       </div>
     </header>
 
+    <!-- Tab navigation (Sub-faza 2D) -->
+    <nav class="bg-white border-b border-gray-200">
+      <div class="max-w-7xl mx-auto px-6">
+        <div class="flex space-x-6">
+          <button id="tab-agents-btn" data-tab="agents"
+                  class="tab-btn py-3 border-b-2 border-blue-600 text-blue-600 font-medium text-sm">
+            Agents
+          </button>
+          <button id="tab-policies-btn" data-tab="policies"
+                  class="tab-btn py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium text-sm">
+            Policies
+          </button>
+        </div>
+      </div>
+    </nav>
+
     <main class="max-w-7xl mx-auto px-6 py-8">
+      <!-- ═══ Agents tab ═══════════════════════════════════════════════════ -->
+      <section id="agents-section">
       <div class="flex items-center justify-between mb-6">
         <div>
           <h2 class="text-2xl font-semibold">Agents</h2>
@@ -118,7 +136,102 @@
           </div>
         </div>
       </details>
+      </section>
+
+      <!-- ═══ Policies tab ═════════════════════════════════════════════════ -->
+      <section id="policies-section" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h2 class="text-2xl font-semibold">Policies</h2>
+            <p class="text-sm text-gray-500 mt-1">
+              <span id="policy-count">0</span> defined
+              <span class="text-gray-300 mx-2">·</span>
+              last updated <span id="policy-last-refresh" class="text-gray-400">—</span>
+            </p>
+          </div>
+          <div class="flex space-x-2">
+            <button id="policy-new-btn"
+                    class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded transition border border-gray-200">
+              + New policy
+            </button>
+            <button id="policy-refresh-btn"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition">
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Version</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hash</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Updated</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="policies-tbody" class="bg-white divide-y divide-gray-200"></tbody>
+          </table>
+          <div id="policies-empty-state" class="hidden text-center py-16 text-gray-500">
+            <div class="text-4xl mb-2 text-gray-300">⊘</div>
+            <div>No policies defined yet.</div>
+            <div class="text-xs mt-2 text-gray-400">Click <strong>+ New policy</strong> to create your first DLP policy.</div>
+          </div>
+        </div>
+      </section>
     </main>
+  </div>
+
+  <!-- Modal: Policy editor (Sub-faza 2D) — create + edit -->
+  <div id="policy-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold">
+          <span id="policy-modal-mode">New</span> policy
+        </h3>
+        <button onclick="closePolicyModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+      </div>
+      <div class="px-6 py-4 space-y-3 overflow-y-auto flex-1">
+        <p class="text-xs text-gray-500">
+          Schema: <code class="bg-gray-100 px-1 rounded">scroogedlp.io/v1</code> — pełna dokumentacja w
+          <a href="/api/v1/docs" target="_blank" class="text-blue-600 hover:underline">Swagger UI</a>.
+        </p>
+        <textarea id="policy-yaml-input"
+                  class="w-full h-96 px-3 py-2 border border-gray-300 rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  spellcheck="false"
+                  placeholder="apiVersion: scroogedlp.io/v1&#10;kind: Policy&#10;metadata:&#10;  name: example&#10;..."></textarea>
+        <div id="policy-validation" class="text-xs"></div>
+      </div>
+      <div class="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-between items-center">
+        <button id="policy-validate-btn"
+                class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800">
+          Validate (dry-run)
+        </button>
+        <div class="flex space-x-2">
+          <button onclick="closePolicyModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded">Cancel</button>
+          <button id="policy-save-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Policy history (Sub-faza 2D) -->
+  <div id="policy-history-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] flex flex-col">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold">History: <span id="policy-history-name" class="font-mono"></span></h3>
+        <button onclick="closeHistoryModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+      </div>
+      <div id="policy-history-list" class="overflow-y-auto flex-1 divide-y divide-gray-200">
+        <!-- Wypełniane przez renderHistory() -->
+      </div>
+      <div class="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-end">
+        <button onclick="closeHistoryModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded">Close</button>
+      </div>
+    </div>
   </div>
 
   <!-- Modal: Add agent wizard (Sub-faza 1D) -->
@@ -689,6 +802,322 @@
       if (sec < 3600)  return Math.floor(sec / 60) + 'm ago';
       if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
       return Math.floor(sec / 86400) + 'd ago';
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ── Policies tab (Sub-faza 2D) ──────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════
+
+    let currentTab = 'agents';
+    let editingPolicyName = null; // null = new, "name" = edit
+
+    function switchTab(tab) {
+      currentTab = tab;
+      $('agents-section').classList.toggle('hidden', tab !== 'agents');
+      $('policies-section').classList.toggle('hidden', tab !== 'policies');
+      // Update tab button styling
+      for (const btn of document.querySelectorAll('.tab-btn')) {
+        const active = btn.dataset.tab === tab;
+        btn.classList.toggle('border-blue-600', active);
+        btn.classList.toggle('text-blue-600', active);
+        btn.classList.toggle('border-transparent', !active);
+        btn.classList.toggle('text-gray-500', !active);
+      }
+      if (tab === 'policies') loadPolicies();
+    }
+
+    $('tab-agents-btn').addEventListener('click', () => switchTab('agents'));
+    $('tab-policies-btn').addEventListener('click', () => switchTab('policies'));
+
+    async function authHeaders() {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) { showLogin(); throw new Error('not authenticated'); }
+      return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+    }
+
+    async function loadPolicies() {
+      try {
+        const r = await fetch('/api/v1/policies', { headers: await authHeaders() });
+        if (r.status === 401) { toast('Session expired'); doLogout(); return; }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const policies = await r.json();
+        renderPolicies(policies);
+      } catch (err) {
+        console.error('loadPolicies:', err);
+        toast('Error: ' + err.message);
+      }
+    }
+
+    function renderPolicies(policies) {
+      const tbody = $('policies-tbody');
+      const empty = $('policies-empty-state');
+      $('policy-count').textContent = policies.length;
+      $('policy-last-refresh').textContent = new Date().toLocaleTimeString();
+
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      if (policies.length === 0) { empty.classList.remove('hidden'); return; }
+      empty.classList.add('hidden');
+
+      for (const p of policies) {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+
+        const cells = [
+          { text: p.name, mono: true, bold: true },
+          { text: 'v' + p.version },
+          { text: String(p.priority) },
+          { text: p.content_hash.slice(0, 12) + '…', mono: true, title: p.content_hash },
+          { text: formatAgo(new Date(p.updated_at)), title: p.updated_at },
+        ];
+        for (const c of cells) {
+          const td = document.createElement('td');
+          td.className = 'px-6 py-3 whitespace-nowrap text-sm '
+            + (c.mono ? 'font-mono ' : '')
+            + (c.bold ? 'font-semibold ' : 'text-gray-700');
+          if (c.title) td.title = c.title;
+          td.textContent = c.text;
+          tr.appendChild(td);
+        }
+
+        // Actions cell.
+        const tdAct = document.createElement('td');
+        tdAct.className = 'px-6 py-3 whitespace-nowrap text-xs space-x-3';
+        const editBtn = document.createElement('button');
+        editBtn.className = 'text-blue-600 hover:text-blue-800';
+        editBtn.textContent = 'Edit';
+        editBtn.addEventListener('click', () => openPolicyModal(p.name));
+        const histBtn = document.createElement('button');
+        histBtn.className = 'text-gray-500 hover:text-gray-700';
+        histBtn.textContent = 'History';
+        histBtn.addEventListener('click', () => openHistoryModal(p.name));
+        const delBtn = document.createElement('button');
+        delBtn.className = 'text-red-600 hover:text-red-800';
+        delBtn.textContent = 'Delete';
+        delBtn.addEventListener('click', () => deletePolicy(p.name));
+        tdAct.appendChild(editBtn);
+        tdAct.appendChild(histBtn);
+        tdAct.appendChild(delBtn);
+        tr.appendChild(tdAct);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    $('policy-refresh-btn').addEventListener('click', () => { loadPolicies(); toast('Refreshed'); });
+    $('policy-new-btn').addEventListener('click', () => openPolicyModal(null));
+
+    async function openPolicyModal(name) {
+      editingPolicyName = name;
+      $('policy-modal-mode').textContent = name ? 'Edit' : 'New';
+      $('policy-validation').textContent = '';
+      $('policy-validation').className = 'text-xs';
+
+      if (name) {
+        // Pobierz aktualny YAML dla edycji
+        try {
+          const r = await fetch('/api/v1/policies/' + encodeURIComponent(name), { headers: await authHeaders() });
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const p = await r.json();
+          $('policy-yaml-input').value = p.content_yaml;
+        } catch (err) {
+          toast('Error loading policy: ' + err.message);
+          return;
+        }
+      } else {
+        $('policy-yaml-input').value =
+          'apiVersion: scroogedlp.io/v1\n' +
+          'kind: Policy\n' +
+          'metadata:\n' +
+          '  name: my-policy\n' +
+          '  description: "Opis polityki"\n' +
+          'priority: 100\n' +
+          'rules:\n' +
+          '  outbound:\n' +
+          '    - id: block-finance-to-usb\n' +
+          '      name: "Block finance files to USB"\n' +
+          '      severity: high\n' +
+          '      action: block\n' +
+          '      sources:\n' +
+          '        - type: directory\n' +
+          '          paths: ["/srv/finance/**"]\n' +
+          '      destinations:\n' +
+          '        - type: usb\n';
+      }
+      $('policy-modal').classList.remove('hidden');
+    }
+
+    window.closePolicyModal = () => {
+      $('policy-modal').classList.add('hidden');
+      editingPolicyName = null;
+    };
+    $('policy-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'policy-modal') closePolicyModal();
+    });
+
+    async function validatePolicy() {
+      const yaml = $('policy-yaml-input').value;
+      const validEl = $('policy-validation');
+      validEl.textContent = 'Walidacja…';
+      validEl.className = 'text-xs text-gray-500';
+      try {
+        const r = await fetch('/api/v1/policies/validate', {
+          method: 'POST',
+          headers: await authHeaders(),
+          body: JSON.stringify({ content_yaml: yaml }),
+        });
+        const body = await r.json();
+        if (body.valid) {
+          validEl.textContent = '✓ Valid — ' + body.name + ' v' + body.version
+            + ' (hash: ' + body.hash.slice(0, 16) + '…)';
+          validEl.className = 'text-xs text-green-700';
+          return true;
+        } else {
+          // Bezpieczne renderowanie listy błędów (potencjalnie attacker-controlled YAML).
+          while (validEl.firstChild) validEl.removeChild(validEl.firstChild);
+          const head = document.createElement('div');
+          head.className = 'font-semibold mb-1';
+          head.textContent = '✗ Invalid:';
+          validEl.appendChild(head);
+          for (const err of body.errors) {
+            const li = document.createElement('div');
+            li.className = 'pl-3';
+            li.textContent = '• ' + err;
+            validEl.appendChild(li);
+          }
+          validEl.className = 'text-xs text-red-700';
+          return false;
+        }
+      } catch (err) {
+        validEl.textContent = 'Validate error: ' + err.message;
+        validEl.className = 'text-xs text-red-700';
+        return false;
+      }
+    }
+
+    $('policy-validate-btn').addEventListener('click', validatePolicy);
+
+    $('policy-save-btn').addEventListener('click', async () => {
+      const ok = await validatePolicy();
+      if (!ok) return;
+
+      const yaml = $('policy-yaml-input').value;
+      const headers = await authHeaders();
+      const isEdit = !!editingPolicyName;
+      const url = isEdit
+        ? '/api/v1/policies/' + encodeURIComponent(editingPolicyName)
+        : '/api/v1/policies';
+      const method = isEdit ? 'PUT' : 'POST';
+      const body = JSON.stringify({ content_yaml: yaml, change_reason: isEdit ? 'edit via dashboard' : 'created via dashboard' });
+
+      try {
+        const r = await fetch(url, { method, headers, body });
+        const respBody = await r.json();
+        if (!r.ok) {
+          toast('Save failed: ' + (respBody.message || ('HTTP ' + r.status)));
+          return;
+        }
+        toast(isEdit ? 'Policy updated (v' + respBody.version + ')' : 'Policy created');
+        closePolicyModal();
+        loadPolicies();
+      } catch (err) {
+        toast('Save error: ' + err.message);
+      }
+    });
+
+    async function deletePolicy(name) {
+      if (!confirm('Usunąć policy „' + name + '"? Historia wersji zostanie zachowana.')) return;
+      try {
+        const r = await fetch('/api/v1/policies/' + encodeURIComponent(name), {
+          method: 'DELETE', headers: await authHeaders(),
+        });
+        if (!r.ok && r.status !== 204) throw new Error('HTTP ' + r.status);
+        toast('Policy „' + name + '" deleted');
+        loadPolicies();
+      } catch (err) {
+        toast('Delete error: ' + err.message);
+      }
+    }
+
+    async function openHistoryModal(name) {
+      $('policy-history-name').textContent = name;
+      const list = $('policy-history-list');
+      while (list.firstChild) list.removeChild(list.firstChild);
+      try {
+        const r = await fetch('/api/v1/policies/' + encodeURIComponent(name) + '/history', {
+          headers: await authHeaders(),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const entries = await r.json();
+        renderHistory(name, entries);
+        $('policy-history-modal').classList.remove('hidden');
+      } catch (err) {
+        toast('History error: ' + err.message);
+      }
+    }
+
+    window.closeHistoryModal = () => $('policy-history-modal').classList.add('hidden');
+    $('policy-history-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'policy-history-modal') closeHistoryModal();
+    });
+
+    function renderHistory(name, entries) {
+      const list = $('policy-history-list');
+      while (list.firstChild) list.removeChild(list.firstChild);
+      if (entries.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'px-6 py-8 text-center text-gray-500 text-sm';
+        empty.textContent = 'Brak historii (policy nie była jeszcze edytowana).';
+        list.appendChild(empty);
+        return;
+      }
+      const latest = entries[0].version;
+      for (const e of entries) {
+        const row = document.createElement('div');
+        row.className = 'px-6 py-3 flex items-start justify-between hover:bg-gray-50';
+
+        const left = document.createElement('div');
+        const versionLine = document.createElement('div');
+        versionLine.className = 'text-sm font-semibold';
+        versionLine.textContent = 'v' + e.version + (e.version === latest ? ' (current)' : '');
+        const reasonLine = document.createElement('div');
+        reasonLine.className = 'text-xs text-gray-600 mt-1';
+        reasonLine.textContent = e.change_reason || '—';
+        const dateLine = document.createElement('div');
+        dateLine.className = 'text-xs text-gray-400 mt-1';
+        dateLine.textContent = new Date(e.changed_at).toLocaleString();
+        left.appendChild(versionLine);
+        left.appendChild(reasonLine);
+        left.appendChild(dateLine);
+
+        const right = document.createElement('div');
+        if (e.version !== latest) {
+          const rollBtn = document.createElement('button');
+          rollBtn.className = 'text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded';
+          rollBtn.textContent = 'Rollback';
+          rollBtn.addEventListener('click', () => rollback(name, e.version));
+          right.appendChild(rollBtn);
+        }
+
+        row.appendChild(left);
+        row.appendChild(right);
+        list.appendChild(row);
+      }
+    }
+
+    async function rollback(name, version) {
+      if (!confirm('Rollback policy „' + name + '" do v' + version + '? Stworzy nową wersję (current+1) z treścią v' + version + '.')) return;
+      try {
+        const r = await fetch('/api/v1/policies/' + encodeURIComponent(name) + '/rollback/' + version, {
+          method: 'POST', headers: await authHeaders(),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const body = await r.json();
+        toast('Rollback OK — nowa wersja v' + body.version);
+        closeHistoryModal();
+        loadPolicies();
+      } catch (err) {
+        toast('Rollback error: ' + err.message);
+      }
     }
 
     // ── Init ────────────────────────────────────────────────────────
