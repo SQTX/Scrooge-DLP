@@ -122,10 +122,12 @@ jobs:
         with:
           key: release-pkg-${{ matrix.target }}
 
-      - name: Install packaging tools (cached)
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-deb,cargo-generate-rpm
+      - name: Install packaging tools
+        # taiki-e/install-action@v2 byl flaky na ubuntu-22.04 x86_64 (rc4
+        # padlo na 'Install packaging tools (cached)' mimo ze aarch64
+        # przeszlo). cargo install jest deterministyczny — wolniejszy o
+        # ~30s (kompilacja), ale niezawodny.
+        run: cargo install cargo-deb cargo-generate-rpm --locked
 
       - name: Build release binary
         run: cargo build --release --bin scrooge-agent --target ${{ matrix.target }}
