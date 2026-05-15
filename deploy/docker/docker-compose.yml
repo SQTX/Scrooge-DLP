@@ -51,7 +51,10 @@ services:
       # /bin/sh w slim image = dash, ktory NIE wspiera bash-style
       # `exec 3<>/dev/tcp/...`. Curl jest zainstalowany w runtime stage
       # specjalnie dla tego healthcheck'a.
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:55000/health"]
+      # `-k` bo manager używa self-signed cert (Sub-faza 1F HTTPS REST);
+      # `127.0.0.1` ma własny cert w SAN, więc TLS handshake przejdzie
+      # ale weryfikacja cert łańcucha by failowała bez `-k`.
+      test: ["CMD", "curl", "-fsSk", "https://127.0.0.1:55000/health"]
       interval: 10s
       timeout: 5s
       retries: 6
