@@ -13,7 +13,8 @@ use std::{path::Path, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use scrooge_proto::v1::{
-    agent_message, agent_service_client::AgentServiceClient, AgentMessage, AgentStatus, Heartbeat,
+    agent_message, agent_service_client::AgentServiceClient, manager_message, AgentMessage,
+    AgentStatus, Heartbeat, PolicyAck,
 };
 use tokio::sync::{mpsc, watch};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
@@ -35,6 +36,9 @@ pub(crate) struct StreamConfig {
     /// Klucz prywatny agenta (generowany lokalnie przy enrollment, nigdy
     /// nie opuszcza endpointa).
     pub key_path: PathBuf,
+    /// Katalog do zapisu polityk otrzymanych z managera (msgpack files
+    /// + metadata). Zwykle `{data_dir}/policies/`.
+    pub policies_dir: PathBuf,
     pub agent_id: Uuid,
     pub heartbeat_interval: Duration,
 }
@@ -164,12 +168,14 @@ async fn run_one_session(
         }
     });
 
-    // Inbound reader loop.
+    // Inbound reader loop — handle Heartbeat ack, PolicyUpdate, Command.
+    let policies_dir = cfg.policies_dir.clone();
+    let tx_ack = tx.clone();
     let result = loop {
         tokio::select! {
             msg = inbound.next() => match msg {
                 Some(Ok(m)) => {
-                    tracing::trace!(?m, "ManagerMessage received");
+                    handle_inbound(m, &policies_dir, &tx_ack).await;
                 },
                 Some(Err(e)) => break Err(anyhow::anyhow!("inbound error: {e}")),
                 None => break Ok(()),
@@ -182,4 +188,81 @@ async fn run_one_session(
     let _ = heartbeat.await;
     drop(tx);
     result
+}
+
+/// Routing przychodzących `ManagerMessage` (Sub-faza 2C).
+///
+/// Aktualnie:
+/// - `HeartbeatAck` → tylko log (nie ma akcji)
+/// - `PolicyUpdate` → zapisz każdy policy do `policies_dir/{name}.msgpack`,
+///   odeślij `PolicyAck` z status=APPLIED (lub odpowiedni error)
+/// - `Command` → log "not implemented" (do Sub-fazy 2E)
+async fn handle_inbound(
+    msg: scrooge_proto::v1::ManagerMessage,
+    policies_dir: &Path,
+    tx_ack: &mpsc::Sender<AgentMessage>,
+) {
+    match msg.payload {
+        Some(manager_message::Payload::HeartbeatAck(_)) => {
+            tracing::trace!("HeartbeatAck received");
+        },
+        Some(manager_message::Payload::Policy(update)) => {
+            if let Err(e) = std::fs::create_dir_all(policies_dir) {
+                tracing::error!(error = %e, dir = %policies_dir.display(), "creating policies dir");
+                return;
+            }
+            tracing::info!(
+                count = update.policies.len(),
+                full_replace = update.full_replace,
+                "PolicyUpdate received"
+            );
+            for policy_ref in &update.policies {
+                let path = policies_dir.join(format!("{}.msgpack", policy_ref.policy_id));
+                let (status, error_message) =
+                    match std::fs::write(&path, &policy_ref.content_compiled) {
+                        Ok(()) => {
+                            tracing::info!(
+                                policy = %policy_ref.policy_id,
+                                version = policy_ref.version,
+                                hash = %policy_ref.content_hash,
+                                bytes = policy_ref.content_compiled.len(),
+                                "policy applied (msgpack saved)"
+                            );
+                            (1, String::new()) // APPLIED
+                        },
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                policy = %policy_ref.policy_id,
+                                "failed to write policy msgpack"
+                            );
+                            (3, format!("write error: {e}")) // RUNTIME_FAILED
+                        },
+                    };
+
+                let ack = AgentMessage {
+                    payload: Some(agent_message::Payload::PolicyAck(PolicyAck {
+                        policy_id: policy_ref.policy_id.clone(),
+                        version: policy_ref.version,
+                        status,
+                        error_message,
+                    })),
+                };
+                if tx_ack.send(ack).await.is_err() {
+                    tracing::warn!("policy ack channel closed");
+                    return;
+                }
+            }
+        },
+        Some(manager_message::Payload::Command(cmd)) => {
+            tracing::info!(
+                command_id = %cmd.command_id,
+                cmd_type = cmd.r#type,
+                "Command received — handler not implemented yet (Sub-faza 2E)"
+            );
+        },
+        None => {
+            tracing::warn!("ManagerMessage without payload (proto3 default)");
+        },
+    }
 }

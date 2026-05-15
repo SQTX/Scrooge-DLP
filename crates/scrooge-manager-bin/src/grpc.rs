@@ -23,7 +23,7 @@ use chrono::Utc;
 use scrooge_common::{ca::RootCa, config::ManagerServerConfig};
 use scrooge_proto::v1::{
     agent_message, agent_service_server::AgentService, manager_message, AgentMessage,
-    EnrollRequest, EnrollResponse, HeartbeatAck, ManagerMessage,
+    EnrollRequest, EnrollResponse, HeartbeatAck, ManagerMessage, PolicyRef, PolicyUpdate,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
@@ -99,6 +99,90 @@ impl AgentServiceImpl {
 }
 
 type StreamResponse = Pin<Box<dyn Stream<Item = Result<ManagerMessage, Status>> + Send + 'static>>;
+
+// ────────────────────────────────────────────────────────────────────────────
+// Policy push helpers (Sub-faza 2C)
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Pobiera polityki które agent powinien dostać przy connect/reconnect:
+/// wszystkie `enabled=true` których agent nie ma w aktualnej wersji.
+///
+/// MVP: bez targets matching — wszystkie enabled polityki idą do każdego
+/// agenta. Targets (os/tags/groups) dorzucimy w 2C.1 gdy agents table dostanie
+/// kolumny `tags JSONB` + `groups TEXT[]`.
+async fn load_pending_policies(
+    pool: &PgPool,
+    agent_id: Uuid,
+) -> Result<Vec<PolicyRef>, sqlx::Error> {
+    let rows: Vec<(String, i32, Vec<u8>, String, i32)> = sqlx::query_as(
+        "SELECT p.name, p.version, p.content_compiled, p.content_hash, p.priority \
+         FROM policies p \
+         LEFT JOIN policy_assignments pa \
+           ON pa.policy_name = p.name AND pa.agent_id = $1 \
+         WHERE p.enabled = TRUE \
+           AND (pa.acked_version IS NULL OR pa.acked_version < p.version) \
+         ORDER BY p.priority DESC, p.name ASC",
+    )
+    .bind(agent_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(name, version, compiled, hash, priority)| PolicyRef {
+            policy_id: name,
+            version: u32::try_from(version).unwrap_or(0),
+            content_compiled: compiled,
+            content_hash: hash,
+            priority: u32::try_from(priority).unwrap_or(0),
+        })
+        .collect())
+}
+
+/// Rejestruje że dana polityka została wypchnięta do agenta (assigned_version
+/// = aktualna policy version). `acked_version` pozostaje NULL/stara dopóki
+/// agent nie odeśle `PolicyAck` (handler ack'a updateuje).
+async fn mark_assigned(
+    pool: &PgPool,
+    agent_id: Uuid,
+    policy_name: &str,
+    version: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO policy_assignments \
+           (agent_id, policy_name, assigned_version, last_pushed_at) \
+         VALUES ($1, $2, $3, NOW()) \
+         ON CONFLICT (agent_id, policy_name) \
+         DO UPDATE SET assigned_version = EXCLUDED.assigned_version, \
+                       last_pushed_at = EXCLUDED.last_pushed_at",
+    )
+    .bind(agent_id)
+    .bind(policy_name)
+    .bind(version)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Agent potwierdził że załadował policy — update `acked_version` w DB.
+async fn mark_acked(
+    pool: &PgPool,
+    agent_id: Uuid,
+    policy_name: &str,
+    version: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE policy_assignments \
+         SET acked_version = $1 \
+         WHERE agent_id = $2 AND policy_name = $3",
+    )
+    .bind(version)
+    .bind(agent_id)
+    .bind(policy_name)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
 
 #[derive(Debug, FromRow)]
 struct EnrollmentTokenRow {
@@ -210,6 +294,10 @@ impl AgentService for AgentServiceImpl {
 
     type StreamStream = StreamResponse;
 
+    #[allow(clippy::too_many_lines)] // 3 background tasks (initial push +
+                                     // inbound loop + heartbeat ack) wymagają
+                                     // setup'u który nie dzieli się czysto
+                                     // dalej bez tracenia czytelności.
     async fn stream(
         &self,
         request: Request<Streaming<AgentMessage>>,
@@ -239,6 +327,53 @@ impl AgentService for AgentServiceImpl {
         let mut inbound = request.into_inner();
         let (tx, rx) = mpsc::channel::<Result<ManagerMessage, Status>>(16);
 
+        // ────────────────────────────────────────────────────────────────────
+        // Initial policy push (Sub-faza 2C): delta polityk dla tego agenta.
+        // Wysyłamy w background tasku żeby nie blokować accept Stream'a.
+        // ────────────────────────────────────────────────────────────────────
+        let pool_push = pool.clone();
+        let tx_push = tx.clone();
+        tokio::spawn(async move {
+            match load_pending_policies(&pool_push, agent_id).await {
+                Ok(pending) if pending.is_empty() => {
+                    tracing::debug!(%agent_id, "no pending policies to push");
+                },
+                Ok(pending) => {
+                    tracing::info!(
+                        %agent_id,
+                        count = pending.len(),
+                        "pushing pending policies"
+                    );
+                    // Zapisz w policy_assignments że wysłaliśmy (acked_version
+                    // poczeka na PolicyAck z agenta).
+                    for p in &pending {
+                        let version_i32 = i32::try_from(p.version).unwrap_or(0);
+                        if let Err(e) =
+                            mark_assigned(&pool_push, agent_id, &p.policy_id, version_i32).await
+                        {
+                            tracing::warn!(error = %e, policy = %p.policy_id, "mark_assigned");
+                        }
+                    }
+                    let update = ManagerMessage {
+                        payload: Some(manager_message::Payload::Policy(PolicyUpdate {
+                            policies: pending,
+                            full_replace: false,
+                            remove_policy_ids: vec![],
+                        })),
+                    };
+                    if tx_push.send(Ok(update)).await.is_err() {
+                        tracing::warn!(%agent_id, "policy push channel closed");
+                    }
+                },
+                Err(e) => {
+                    tracing::error!(%agent_id, error = %e, "loading pending policies");
+                },
+            }
+        });
+
+        // ────────────────────────────────────────────────────────────────────
+        // Inbound loop — Heartbeat / PolicyAck / inne future messages.
+        // ────────────────────────────────────────────────────────────────────
         tokio::spawn(async move {
             while let Some(msg) = inbound.next().await {
                 match msg {
@@ -265,8 +400,38 @@ impl AgentService for AgentServiceImpl {
                             break;
                         }
                     },
+                    Ok(AgentMessage {
+                        payload: Some(agent_message::Payload::PolicyAck(ack)),
+                    }) => {
+                        // Agent potwierdza że załadował policy (lub failed).
+                        // status = 1 (APPLIED), 2-4 = różne błędy.
+                        let version_i32 = i32::try_from(ack.version).unwrap_or(0);
+                        if ack.status == 1 {
+                            // APPLIED
+                            if let Err(e) =
+                                mark_acked(&pool, agent_id, &ack.policy_id, version_i32).await
+                            {
+                                tracing::warn!(error = %e, "mark_acked");
+                            }
+                            tracing::info!(
+                                %agent_id,
+                                policy = %ack.policy_id,
+                                version = ack.version,
+                                "PolicyAck APPLIED"
+                            );
+                        } else {
+                            tracing::warn!(
+                                %agent_id,
+                                policy = %ack.policy_id,
+                                version = ack.version,
+                                status = ack.status,
+                                error = %ack.error_message,
+                                "PolicyAck FAILED"
+                            );
+                        }
+                    },
                     Ok(_other) => {
-                        tracing::debug!(%agent_id, "non-heartbeat message (ignored in MVP)");
+                        tracing::debug!(%agent_id, "other inbound message (ignored in MVP)");
                     },
                     Err(e) => {
                         tracing::warn!(%agent_id, error = %e, "inbound error");

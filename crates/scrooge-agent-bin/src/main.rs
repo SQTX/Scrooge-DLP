@@ -143,6 +143,9 @@ async fn main() -> Result<()> {
         // i data_dir/agent.key.
         cert_path: data_dir.join("agent.cert"),
         key_path: data_dir.join("agent.key"),
+        // Polityki otrzymane od managera (Sub-faza 2C) lądują tutaj jako
+        // pliki msgpack — jeden per policy name.
+        policies_dir: data_dir.join("policies"),
         agent_id: state.agent_id,
         heartbeat_interval: Duration::from_secs(u64::from(config.agent.heartbeat_interval_secs)),
     };
