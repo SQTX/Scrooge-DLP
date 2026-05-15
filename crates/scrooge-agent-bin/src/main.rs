@@ -132,6 +132,11 @@ async fn main() -> Result<()> {
     let stream_cfg = stream::StreamConfig {
         endpoint: config.manager.endpoint.clone(),
         ca_cert_path: PathBuf::from(&config.manager.ca_cert_path),
+        // mTLS — agent prezentuje swój cert (podpisany przez manager CA
+        // przy enrollment). state.rs zapisuje pliki w data_dir/agent.cert
+        // i data_dir/agent.key.
+        cert_path: data_dir.join("agent.cert"),
+        key_path: data_dir.join("agent.key"),
         agent_id: state.agent_id,
         heartbeat_interval: Duration::from_secs(u64::from(config.agent.heartbeat_interval_secs)),
     };

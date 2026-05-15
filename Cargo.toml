@@ -101,6 +101,8 @@ rcgen          = { version = "0.13", features = ["x509-parser"] }
 sha2           = "0.10"
 hmac           = "0.12"
 aes-gcm        = "0.10"
+# Parser X.509 — wyciąga Subject CN z client cert w gRPC mTLS handler.
+x509-parser    = "0.16"
 
 # Auth
 bcrypt       = "0.16"

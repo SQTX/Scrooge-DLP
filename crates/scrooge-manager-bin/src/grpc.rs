@@ -9,10 +9,12 @@
 
 //! gRPC server managera — implementacja `AgentService`.
 //!
-//! Krok 8: pełne `Enroll` (CSR signing + agent registry) i `Stream`
-//! (heartbeat ack + update `last_seen`). Brakuje pełnego mTLS — agent
-//! identyfikuje się przez `agent-id` w gRPC metadata header (weryfikowane
-//! przeciwko DB).
+//! Pełne mTLS (Sub-faza 1E): `Stream` wymaga client cert podpisanego przez
+//! nasz Root CA. Manager wyciąga `agent_id` z Subject CN cert'a (NIE z
+//! metadata jak w MVP). `Enroll` RPC jest z definicji pre-cert (agent nie
+//! ma jeszcze swojego cert'a), więc TLS jest skonfigurowany jako
+//! `client_auth_optional(true)` — connection bez cert jest akceptowane
+//! przez transport, a per-RPC logika decyduje czy wymagać.
 
 use std::{pin::Pin, sync::Arc};
 
@@ -28,22 +30,59 @@ use sqlx::{FromRow, PgPool};
 use tokio::sync::mpsc;
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tonic::{
-    transport::{Identity, ServerTlsConfig},
+    transport::{Certificate, Identity, ServerTlsConfig},
     Request, Response, Status, Streaming,
 };
 use uuid::Uuid;
+use x509_parser::prelude::*;
 
-/// Buduje konfigurację TLS dla tonic server.
+/// Buduje konfigurację TLS dla tonic server (mTLS — pełne weryfikowanie
+/// client cert podpisanego przez nasz Root CA).
 ///
-/// **Server-side TLS only** — pełne mTLS dochodzi w późniejszym refactorze
-/// (`Enroll` jest z definicji pre-cert, więc nie da się globalnie wymagać
-/// client cert dla całego endpointu).
+/// `client_auth_optional(true)`: TLS handshake przepuszcza zarówno
+/// połączenia z client cert (Stream) jak i bez (Enroll). Per-RPC handler
+/// sprawdza w `request.peer_certs()` czy cert obecny.
 pub(crate) fn tls_config(server: &ManagerServerConfig) -> anyhow::Result<ServerTlsConfig> {
     let cert = std::fs::read(&server.tls_cert_path)
         .with_context(|| format!("reading TLS cert `{}`", server.tls_cert_path))?;
     let key = std::fs::read(&server.tls_key_path)
         .with_context(|| format!("reading TLS key `{}`", server.tls_key_path))?;
-    Ok(ServerTlsConfig::new().identity(Identity::from_pem(cert, key)))
+    let ca = std::fs::read(&server.ca_cert_path)
+        .with_context(|| format!("reading CA cert `{}`", server.ca_cert_path))?;
+    Ok(ServerTlsConfig::new()
+        .identity(Identity::from_pem(cert, key))
+        .client_ca_root(Certificate::from_pem(ca))
+        .client_auth_optional(true))
+}
+
+/// Wyciąga `agent_id` (UUID) z Subject CN client cert'a w peer chain.
+///
+/// Returns `Status::unauthenticated` gdy:
+/// - brak client cert (TLS przepuścił bo `client_auth_optional`, ale Stream wymaga)
+/// - cert nie jest poprawnym X.509
+/// - CN nie istnieje lub nie jest UUID-em
+///
+/// Sam fakt że cert dotarł do handler'a oznacza że TLS go zweryfikowało
+/// przeciwko Root CA — tu tylko ekstrahujemy tożsamość.
+//
+// `tonic::Status` jest sporej wagi (176B), ale wymuszone przez tonic API.
+#[allow(clippy::result_large_err)]
+fn extract_agent_id<T>(request: &Request<T>) -> Result<Uuid, Status> {
+    let certs = request
+        .peer_certs()
+        .ok_or_else(|| Status::unauthenticated("client cert required (mTLS)"))?;
+    let first = certs
+        .first()
+        .ok_or_else(|| Status::unauthenticated("no client cert in peer chain"))?;
+    let (_, parsed) = X509Certificate::from_der(first.as_ref())
+        .map_err(|_| Status::unauthenticated("invalid client cert (X.509 parse)"))?;
+    let cn = parsed
+        .subject()
+        .iter_common_name()
+        .next()
+        .and_then(|attr| attr.as_str().ok())
+        .ok_or_else(|| Status::unauthenticated("client cert subject has no CN"))?;
+    Uuid::parse_str(cn).map_err(|_| Status::unauthenticated("client cert CN is not a UUID"))
 }
 
 /// Implementacja `AgentService`.
@@ -112,16 +151,22 @@ impl AgentService for AgentServiceImpl {
             }
         }
 
-        // 2. Sign CSR.
+        // 2. Wygeneruj agent_id przed signowaniem — manager jest autorytatywnym
+        //    źródłem identity, więc CN wystawianego cert'a = agent_id (NIE
+        //    hostname z CSR-a). Wymagane przez mTLS handler `extract_agent_id`
+        //    który czyta `agent_id` z peer cert Subject CN.
+        let agent_id = Uuid::new_v4();
+
+        // 3. Sign CSR z wymuszonym CN=agent_id.
         let csr_pem = std::str::from_utf8(&req.csr_pem)
             .map_err(|_| Status::invalid_argument("CSR must be valid UTF-8 PEM"))?;
-        let cert_pem = self.ca.sign_csr(csr_pem).map_err(|e| {
-            tracing::error!(error = %e, "CSR signing failed");
-            Status::internal("CSR signing failed")
-        })?;
-
-        // 3. Wpis agenta do DB.
-        let agent_id = Uuid::new_v4();
+        let cert_pem = self
+            .ca
+            .sign_csr_with_cn(csr_pem, &agent_id.to_string())
+            .map_err(|e| {
+                tracing::error!(error = %e, "CSR signing failed");
+                Status::internal("CSR signing failed")
+            })?;
         let cert_fingerprint = sha256_hex(cert_pem.as_bytes());
 
         sqlx::query(
@@ -169,17 +214,13 @@ impl AgentService for AgentServiceImpl {
         &self,
         request: Request<Streaming<AgentMessage>>,
     ) -> Result<Response<Self::StreamStream>, Status> {
-        // Wyciągnij agent_id z metadata header (substytut mTLS na MVP).
-        let agent_id = request
-            .metadata()
-            .get("agent-id")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| Uuid::parse_str(s).ok())
-            .ok_or_else(|| {
-                Status::unauthenticated("missing or invalid `agent-id` metadata header")
-            })?;
+        // mTLS: agent_id z Subject CN client cert (NIE z metadata).
+        // TLS layer już zweryfikował że cert jest podpisany przez nasz Root CA.
+        let agent_id = extract_agent_id(&request)?;
 
-        // Weryfikuj że agent istnieje w DB.
+        // Weryfikuj że agent istnieje w DB i nie został revoke'd.
+        // Aktualnie sprawdzamy tylko obecność — revoke flag w DB dochodzi
+        // wraz z dashboardowym "Remove agent" w przyszłej fazie.
         let exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM agents WHERE id = $1")
             .bind(agent_id)
             .fetch_optional(&self.pool)
@@ -192,7 +233,7 @@ impl AgentService for AgentServiceImpl {
             return Err(Status::unauthenticated("agent not enrolled"));
         }
 
-        tracing::info!(%agent_id, "Stream connection accepted");
+        tracing::info!(%agent_id, "Stream connection accepted (mTLS)");
 
         let pool = self.pool.clone();
         let mut inbound = request.into_inner();

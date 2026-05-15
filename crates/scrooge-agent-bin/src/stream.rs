@@ -9,7 +9,7 @@
 //! - exponential backoff reconnect przy disconnectach,
 //! - graceful shutdown przez `watch` channel.
 
-use std::{path::Path, time::Duration};
+use std::{path::Path, path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result};
 use scrooge_proto::v1::{
@@ -18,7 +18,7 @@ use scrooge_proto::v1::{
 use tokio::sync::{mpsc, watch};
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use tonic::{
-    transport::{Certificate, Channel, ClientTlsConfig},
+    transport::{Certificate, Channel, ClientTlsConfig, Identity},
     Request,
 };
 use uuid::Uuid;
@@ -29,7 +29,12 @@ const CHANNEL_CAPACITY: usize = 64;
 
 pub(crate) struct StreamConfig {
     pub endpoint: String,
-    pub ca_cert_path: std::path::PathBuf,
+    pub ca_cert_path: PathBuf,
+    /// Cert agenta (podpisany przez manager CA przy enrollment) — do mTLS.
+    pub cert_path: PathBuf,
+    /// Klucz prywatny agenta (generowany lokalnie przy enrollment, nigdy
+    /// nie opuszcza endpointa).
+    pub key_path: PathBuf,
     pub agent_id: Uuid,
     pub heartbeat_interval: Duration,
 }
@@ -47,7 +52,14 @@ pub(crate) async fn run_with_reconnect(
             return Ok(());
         }
 
-        match build_channel(&cfg.endpoint, &cfg.ca_cert_path).await {
+        match build_channel(
+            &cfg.endpoint,
+            &cfg.ca_cert_path,
+            &cfg.cert_path,
+            &cfg.key_path,
+        )
+        .await
+        {
             Ok(channel) => match run_one_session(channel, &cfg, shutdown.clone()).await {
                 Ok(()) => {
                     tracing::info!("stream ended cleanly, reconnecting in 1s");
@@ -71,17 +83,29 @@ pub(crate) async fn run_with_reconnect(
     }
 }
 
-async fn build_channel(endpoint: &str, ca_cert_path: &Path) -> Result<Channel> {
+async fn build_channel(
+    endpoint: &str,
+    ca_cert_path: &Path,
+    cert_path: &Path,
+    key_path: &Path,
+) -> Result<Channel> {
     let ca_pem = std::fs::read(ca_cert_path)
         .with_context(|| format!("reading CA cert from {}", ca_cert_path.display()))?;
+    let cert_pem = std::fs::read(cert_path)
+        .with_context(|| format!("reading agent cert from {}", cert_path.display()))?;
+    let key_pem = std::fs::read(key_path)
+        .with_context(|| format!("reading agent key from {}", key_path.display()))?;
     let host = endpoint
         .split(':')
         .next()
         .ok_or_else(|| anyhow::anyhow!("invalid endpoint"))?
         .to_string();
 
+    // mTLS: prezentujemy nasz cert (podpisany przez manager CA przy
+    // enrollment) — manager wyciągnie agent_id z Subject CN.
     let tls = ClientTlsConfig::new()
         .ca_certificate(Certificate::from_pem(ca_pem))
+        .identity(Identity::from_pem(cert_pem, key_pem))
         .domain_name(host);
     let uri = format!("https://{endpoint}");
 
@@ -104,13 +128,11 @@ async fn run_one_session(
     let (tx, rx) = mpsc::channel::<AgentMessage>(CHANNEL_CAPACITY);
     let outbound = ReceiverStream::new(rx);
 
-    // Wstrzykuj agent-id w metadata header (substytut mTLS w MVP).
-    let mut request = Request::new(outbound);
-    request
-        .metadata_mut()
-        .insert("agent-id", cfg.agent_id.to_string().parse()?);
+    // mTLS: manager wyciąga agent_id z Subject CN naszego client cert'a.
+    // `agent_id` w cfg trzymamy tylko dla lokalnego logowania.
+    let request = Request::new(outbound);
 
-    tracing::info!(endpoint = %cfg.endpoint, agent_id = %cfg.agent_id, "Stream opening");
+    tracing::info!(endpoint = %cfg.endpoint, agent_id = %cfg.agent_id, "Stream opening (mTLS)");
     let response = client.stream(request).await.context("Stream RPC")?;
     let mut inbound = response.into_inner();
 

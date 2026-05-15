@@ -147,9 +147,31 @@ impl RootCa {
     /// Podpisuje CSR przesłany przez agenta.
     ///
     /// `csr_pem` musi być PEM-encoded PKCS#10 CertificateSigningRequest.
-    /// Zwraca PEM podpisanego cert agenta.
+    /// Zwraca PEM podpisanego cert agenta. Subject CN pozostaje taki jaki
+    /// agent wpisał w CSR (zwykle hostname).
+    ///
+    /// **Dla `Enroll` RPC używaj [`Self::sign_csr_with_cn`]** — manager
+    /// jest autorytatywnym źródłem `agent_id` (UUID) i powinien wymusić
+    /// CN w wystawianym cercie, ignorując co agent wpisał w CSR.
     pub fn sign_csr(&self, csr_pem: &str) -> Result<String, CaError> {
         let csr = CertificateSigningRequestParams::from_pem(csr_pem)?;
+        let signed = csr.signed_by(&self.cert, &self.key_pair)?;
+        Ok(signed.pem())
+    }
+
+    /// Podpisuje CSR z **wymuszonym Subject CN** (= `agent_id` UUID).
+    ///
+    /// Manager wywołuje to przy `Enroll` RPC — agent_id generowany jest
+    /// server-side po walidacji tokena, agent nie wie go zanim odbierze
+    /// `EnrollResponse`. CN agenta w CSR (zwykle hostname) jest celowo
+    /// nadpisywany, żeby manager `extract_agent_id` z mTLS peer cert
+    /// dostał deterministycznie UUID.
+    pub fn sign_csr_with_cn(&self, csr_pem: &str, subject_cn: &str) -> Result<String, CaError> {
+        let mut csr = CertificateSigningRequestParams::from_pem(csr_pem)?;
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, subject_cn);
+        dn.push(DnType::OrganizationName, "ScroogeDLP Agent");
+        csr.params.distinguished_name = dn;
         let signed = csr.signed_by(&self.cert, &self.key_pair)?;
         Ok(signed.pem())
     }
