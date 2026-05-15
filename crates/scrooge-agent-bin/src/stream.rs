@@ -156,6 +156,9 @@ async fn run_one_session(
                             status: Some(AgentStatus::default()),
                             active_policy_ids: vec![],
                             active_policy_versions: std::collections::HashMap::new(),
+                            // Sub-faza 2E: manager updateuje agents.agent_version
+                            // przy każdym heartbeat.
+                            agent_version: env!("CARGO_PKG_VERSION").to_string(),
                         })),
                     };
                     if tx_hb.send(hb).await.is_err() {

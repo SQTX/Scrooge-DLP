@@ -38,7 +38,7 @@ use utoipa::{
 };
 use utoipa_swagger_ui::SwaggerUi;
 
-pub use state::AppState;
+pub use state::{AgentCommandRequest, AppState};
 
 /// Embedded dashboard HTML — minimalistyczny SPA (login + agents list).
 /// `include_str!` wpisuje treść pliku w binarkę przy compile time, więc
@@ -55,6 +55,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/login", post(auth::login))
         .route("/auth/refresh", post(auth::refresh))
         .route("/agents", get(handlers::agents::list))
+        .route("/agents/:id/command", post(handlers::agents::send_command))
         .route("/agents/install", post(handlers::install::create))
         .route("/install.sh", get(handlers::install::script))
         .route("/install-macos.sh", get(handlers::install::script_macos))
@@ -190,6 +191,7 @@ impl Modify for SecurityAddon {
         auth::login,
         auth::refresh,
         handlers::agents::list,
+        handlers::agents::send_command,
         handlers::install::create,
         handlers::install::script,
         handlers::install::script_macos,
@@ -210,6 +212,8 @@ impl Modify for SecurityAddon {
         auth::LoginResponse,
         auth::RefreshRequest,
         handlers::agents::AgentDto,
+        handlers::agents::SendCommandRequest,
+        handlers::agents::SendCommandResponse,
         handlers::install::InstallRequest,
         handlers::install::InstallResponse,
         handlers::policies::PolicySummaryDto,

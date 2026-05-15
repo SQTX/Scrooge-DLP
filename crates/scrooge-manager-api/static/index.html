@@ -185,6 +185,38 @@
     </main>
   </div>
 
+  <!-- Modal: Send command (Sub-faza 2E) -->
+  <div id="command-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-lg max-w-md w-full">
+      <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Send command</h3>
+        <button onclick="closeCommandModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+      </div>
+      <div class="px-6 py-4 space-y-3">
+        <p class="text-sm text-gray-600">
+          Target: <span id="command-target-hostname" class="font-mono"></span>
+        </p>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Command</label>
+          <select id="command-type-select"
+                  class="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="refresh_policies">Refresh policies (force re-sync od managera)</option>
+            <option value="collect_diagnostics">Collect diagnostics (request status report)</option>
+            <option value="update_tags">Update tags (placeholder — Milestone 3+)</option>
+          </select>
+        </div>
+        <p class="text-xs text-gray-500">
+          Fire-and-forget. Wynik (`CommandResult`) trafi do logów agenta + managera.
+          Live response w UI dochodzi w Phase 3+.
+        </p>
+      </div>
+      <div class="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-end space-x-2">
+        <button onclick="closeCommandModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded">Cancel</button>
+        <button id="command-send-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded">Send</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Policy editor (Sub-faza 2D) — create + edit -->
   <div id="policy-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
     <div class="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] flex flex-col">
@@ -709,6 +741,14 @@
       $('agent-count').textContent = agents.length;
       $('last-refresh-time').textContent = new Date().toLocaleTimeString();
 
+      // Sub-faza 2E: oblicz najnowszą wersję widzianą w deployment.
+      // Jeśli >1 unikalnych wersji, którykolwiek agent z innym niż latest
+      // dostaje czerwony znacznik "outdated".
+      const versions = agents.map(a => a.agent_version).filter(Boolean);
+      const latestVersion = versions.length
+        ? versions.slice().sort().pop()
+        : null;
+
       // Detect nowego agenta gdy wizard aktywny — toast jednorazowy.
       const currentIds = new Set(agents.map(a => a.id));
       if (pendingInstall && knownAgentIds) {
@@ -757,8 +797,15 @@
         tr.appendChild(tdOs);
 
         const tdVer = document.createElement('td');
-        tdVer.className = 'px-6 py-3 whitespace-nowrap text-sm text-gray-700';
-        tdVer.textContent = a.agent_version || '—';
+        const isOutdated = a.agent_version && latestVersion && a.agent_version !== latestVersion;
+        tdVer.className = 'px-6 py-3 whitespace-nowrap text-sm '
+          + (isOutdated ? 'text-orange-700 font-semibold' : 'text-gray-700');
+        if (isOutdated) {
+          tdVer.title = 'Outdated — najnowsza widziana: ' + latestVersion;
+          tdVer.textContent = (a.agent_version || '—') + ' ⚠';
+        } else {
+          tdVer.textContent = a.agent_version || '—';
+        }
         tr.appendChild(tdVer);
 
         const tdEnr = document.createElement('td');
@@ -786,9 +833,7 @@
         const cmdBtn = document.createElement('button');
         cmdBtn.className = 'text-blue-600 hover:text-blue-800';
         cmdBtn.textContent = 'Send command';
-        cmdBtn.addEventListener('click', () => {
-          toast('Send-command (' + a.hostname + ') — wymaga POST /agents/{id}/command (Milestone 2+)');
-        });
+        cmdBtn.addEventListener('click', () => openCommandModal(a.id, a.hostname));
         tdAct.appendChild(copyBtn); tdAct.appendChild(cmdBtn);
         tr.appendChild(tdAct);
 
@@ -1119,6 +1164,47 @@
         toast('Rollback error: ' + err.message);
       }
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ── Send command modal (Sub-faza 2E) ────────────────────────────
+    // ═══════════════════════════════════════════════════════════════
+
+    let commandTargetAgentId = null;
+
+    function openCommandModal(agentId, hostname) {
+      commandTargetAgentId = agentId;
+      $('command-target-hostname').textContent = hostname + ' (' + agentId.slice(0, 8) + '…)';
+      $('command-modal').classList.remove('hidden');
+    }
+
+    window.closeCommandModal = () => {
+      $('command-modal').classList.add('hidden');
+      commandTargetAgentId = null;
+    };
+    $('command-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'command-modal') closeCommandModal();
+    });
+
+    $('command-send-btn').addEventListener('click', async () => {
+      if (!commandTargetAgentId) return;
+      const commandType = $('command-type-select').value;
+      try {
+        const r = await fetch('/api/v1/agents/' + commandTargetAgentId + '/command', {
+          method: 'POST',
+          headers: await authHeaders(),
+          body: JSON.stringify({ command_type: commandType }),
+        });
+        const body = await r.json();
+        if (r.status === 202) {
+          toast('Command sent: ' + commandType + ' (id: ' + body.command_id.slice(0, 8) + '…)');
+          closeCommandModal();
+        } else {
+          toast('Send failed: ' + (body.message || ('HTTP ' + r.status)));
+        }
+      } catch (err) {
+        toast('Send error: ' + err.message);
+      }
+    });
 
     // ── Init ────────────────────────────────────────────────────────
     (async () => {

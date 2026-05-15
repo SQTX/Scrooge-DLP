@@ -108,19 +108,31 @@ async fn main() -> anyhow::Result<()> {
         )
     })?;
 
+    // Sub-faza 2E: per-agent channel registry (manager → agent push) +
+    // bridge z REST do gRPC. REST handler `POST /agents/{id}/command`
+    // wpycha żądanie do `cmd_rx`, background task lookuje agenta w registry
+    // i wysyła `ManagerMessage::Command`.
+    let agent_registry = grpc::AgentRegistry::new();
+    let (cmd_tx, cmd_rx) =
+        tokio::sync::mpsc::channel::<scrooge_manager_api::AgentCommandRequest>(64);
+
     // Komponenty serwerów.
     let api_state = AppState::new(
         pool.clone(),
         &config.auth,
         config.dashboard.clone(),
         &config.server,
+        Some(cmd_tx),
     );
     let tls = grpc::tls_config(&config.server).context("building TLS config")?;
-    let grpc_service = grpc::AgentServiceImpl::new(pool.clone(), ca);
+    let grpc_service = grpc::AgentServiceImpl::new(pool.clone(), ca, agent_registry.clone());
     let grpc_server = Server::builder()
         .tls_config(tls)
         .context("applying TLS config")?
         .add_service(AgentServiceServer::new(grpc_service));
+
+    // Bridge task: REST → gRPC push.
+    tokio::spawn(grpc::run_command_bridge(agent_registry, cmd_rx));
 
     // Wspólny kanał shutdown — SIGINT/SIGTERM triggeruje oba serwery.
     let (shutdown_tx, shutdown_rx) = watch::channel(false);

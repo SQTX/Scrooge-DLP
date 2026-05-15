@@ -80,6 +80,10 @@ message Heartbeat {
   AgentStatus status = 2;
   repeated string active_policy_ids = 3;
   map<string, uint32> active_policy_versions = 4;
+  // Wersja agenta (z env!(CARGO_PKG_VERSION)) — manager UPDATE'uje
+  // `agents.agent_version` przy każdym heartbeat, dzięki czemu dashboard
+  // wykrywa agentów na starszych wersjach po self-update / mass deploy.
+  string agent_version = 5;
 }
 
 message HeartbeatAck {

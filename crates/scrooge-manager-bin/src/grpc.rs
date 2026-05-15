@@ -16,18 +16,19 @@
 //! `client_auth_optional(true)` — connection bez cert jest akceptowane
 //! przez transport, a per-RPC logika decyduje czy wymagać.
 
-use std::{pin::Pin, sync::Arc};
+use std::{collections::HashMap, pin::Pin, sync::Arc};
 
 use anyhow::Context;
 use chrono::Utc;
 use scrooge_common::{ca::RootCa, config::ManagerServerConfig};
+use scrooge_manager_api::AgentCommandRequest;
 use scrooge_proto::v1::{
-    agent_message, agent_service_server::AgentService, manager_message, AgentMessage,
+    agent_message, agent_service_server::AgentService, manager_message, AgentMessage, Command,
     EnrollRequest, EnrollResponse, HeartbeatAck, ManagerMessage, PolicyRef, PolicyUpdate,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLock};
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 use tonic::{
     transport::{Certificate, Identity, ServerTlsConfig},
@@ -85,16 +86,104 @@ fn extract_agent_id<T>(request: &Request<T>) -> Result<Uuid, Status> {
     Uuid::parse_str(cn).map_err(|_| Status::unauthenticated("client cert CN is not a UUID"))
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// AgentRegistry — connected agents (Sub-faza 2E)
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Type alias dla outbound channel per connected agent.
+type AgentTx = mpsc::Sender<Result<ManagerMessage, Status>>;
+
+/// Mapa `agent_id → outbound channel`. Stream handler registruje przy
+/// accept, unregistruje przy disconnect. Bridge task (`run_command_bridge`)
+/// lookuje tu agenta przy POST /agents/{id}/command.
+#[derive(Clone)]
+pub(crate) struct AgentRegistry {
+    inner: Arc<RwLock<HashMap<Uuid, AgentTx>>>,
+}
+
+impl AgentRegistry {
+    pub(crate) fn new() -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    async fn register(&self, agent_id: Uuid, tx: AgentTx) {
+        self.inner.write().await.insert(agent_id, tx);
+    }
+
+    async fn unregister(&self, agent_id: Uuid) {
+        self.inner.write().await.remove(&agent_id);
+    }
+
+    async fn get(&self, agent_id: Uuid) -> Option<AgentTx> {
+        self.inner.read().await.get(&agent_id).cloned()
+    }
+}
+
+/// Bridge task — odbiera `AgentCommandRequest` z REST handler'a i wysyła
+/// `ManagerMessage::Command` do agenta przez jego outbound channel (jeśli
+/// connected). Działa dopóki kanał REST nie zostanie zamknięty (= manager
+/// shutdown).
+pub(crate) async fn run_command_bridge(
+    registry: AgentRegistry,
+    mut rx: mpsc::Receiver<AgentCommandRequest>,
+) {
+    while let Some(req) = rx.recv().await {
+        match registry.get(req.agent_id).await {
+            Some(tx) => {
+                let cmd = ManagerMessage {
+                    payload: Some(manager_message::Payload::Command(Command {
+                        command_id: req.command_id.clone(),
+                        r#type: req.command_type,
+                        payload: req.payload,
+                        issued_at_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0),
+                        deadline_ns: 0,
+                    })),
+                };
+                if tx.send(Ok(cmd)).await.is_err() {
+                    tracing::warn!(
+                        agent_id = %req.agent_id,
+                        command_id = %req.command_id,
+                        "outbound channel closed — agent disconnecting"
+                    );
+                } else {
+                    tracing::info!(
+                        agent_id = %req.agent_id,
+                        command_id = %req.command_id,
+                        command_type = req.command_type,
+                        "command forwarded to agent"
+                    );
+                }
+            },
+            None => {
+                tracing::warn!(
+                    agent_id = %req.agent_id,
+                    command_id = %req.command_id,
+                    "agent not connected — command dropped"
+                );
+            },
+        }
+    }
+}
+
 /// Implementacja `AgentService`.
 #[derive(Debug)]
 pub(crate) struct AgentServiceImpl {
     pool: PgPool,
     ca: Arc<RootCa>,
+    registry: AgentRegistry,
 }
 
 impl AgentServiceImpl {
-    pub(crate) fn new(pool: PgPool, ca: Arc<RootCa>) -> Self {
-        Self { pool, ca }
+    pub(crate) fn new(pool: PgPool, ca: Arc<RootCa>, registry: AgentRegistry) -> Self {
+        Self { pool, ca, registry }
+    }
+}
+
+impl std::fmt::Debug for AgentRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentRegistry").finish_non_exhaustive()
     }
 }
 
@@ -324,8 +413,13 @@ impl AgentService for AgentServiceImpl {
         tracing::info!(%agent_id, "Stream connection accepted (mTLS)");
 
         let pool = self.pool.clone();
+        let registry = self.registry.clone();
         let mut inbound = request.into_inner();
         let (tx, rx) = mpsc::channel::<Result<ManagerMessage, Status>>(16);
+
+        // Sub-faza 2E: register agent w registry — bridge może teraz wysyłać
+        // do niego commendy.
+        registry.register(agent_id, tx.clone()).await;
 
         // ────────────────────────────────────────────────────────────────────
         // Initial policy push (Sub-faza 2C): delta polityk dla tego agenta.
@@ -378,17 +472,26 @@ impl AgentService for AgentServiceImpl {
             while let Some(msg) = inbound.next().await {
                 match msg {
                     Ok(AgentMessage {
-                        payload: Some(agent_message::Payload::Heartbeat(_hb)),
+                        payload: Some(agent_message::Payload::Heartbeat(hb)),
                     }) => {
-                        tracing::debug!(%agent_id, "heartbeat");
+                        tracing::debug!(%agent_id, version = %hb.agent_version, "heartbeat");
 
-                        if let Err(e) =
-                            sqlx::query("UPDATE agents SET last_seen = NOW() WHERE id = $1")
-                                .bind(agent_id)
-                                .execute(&pool)
-                                .await
+                        // Sub-faza 2E: aktualizuj agent_version przy każdym
+                        // heartbeat — dashboard widzi outdated agents po
+                        // self-update / mass deploy. Empty version = stary
+                        // klient (proto przed pole 5) → zachowujemy starą
+                        // wartość przez COALESCE.
+                        if let Err(e) = sqlx::query(
+                            "UPDATE agents SET last_seen = NOW(), \
+                                              agent_version = COALESCE(NULLIF($1, ''), agent_version) \
+                             WHERE id = $2",
+                        )
+                        .bind(&hb.agent_version)
+                        .bind(agent_id)
+                        .execute(&pool)
+                        .await
                         {
-                            tracing::warn!(error = %e, "updating last_seen");
+                            tracing::warn!(error = %e, "updating last_seen/agent_version");
                         }
 
                         let ack = ManagerMessage {
@@ -439,6 +542,9 @@ impl AgentService for AgentServiceImpl {
                     },
                 }
             }
+            // Sub-faza 2E: unregister z registry przy disconnect — bridge
+            // przestaje wysyłać commendy do tego agenta.
+            registry.unregister(agent_id).await;
             tracing::info!(%agent_id, "Stream disconnected");
         });
 

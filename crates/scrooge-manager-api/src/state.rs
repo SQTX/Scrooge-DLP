@@ -10,6 +10,8 @@ use std::sync::Arc;
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use scrooge_common::config::{AuthConfig, DashboardConfig, ManagerServerConfig};
 use sqlx::PgPool;
+use tokio::sync::mpsc;
+use uuid::Uuid;
 
 /// Stan współdzielony między handlerami.
 ///
@@ -24,6 +26,22 @@ struct Inner {
     auth: AuthMaterial,
     dashboard: DashboardConfig,
     install: InstallConfig,
+    /// Bridge do manager-bin: REST handler `send_command` wpycha tu
+    /// żądania, background task w manager-bin odbiera i wysyła przez gRPC
+    /// Stream do connected agentów. `None` = manager-bin nie wystawia
+    /// bridge'a (np. testy unit'owe AppState).
+    command_tx: Option<mpsc::Sender<AgentCommandRequest>>,
+}
+
+/// Żądanie wysłania komendy z REST do agenta (manager-bin bridge).
+#[derive(Debug)]
+pub struct AgentCommandRequest {
+    pub agent_id: Uuid,
+    /// `proto::v1::CommandType` jako i32 (REFRESH_POLICIES=1 itd.).
+    pub command_type: i32,
+    pub payload: Vec<u8>,
+    /// Wygenerowany przez REST handler — manager-bin wpisuje w Command.command_id.
+    pub command_id: String,
 }
 
 /// Pola configu managera potrzebne przez install API (Sub-faza 1B).
@@ -51,6 +69,7 @@ impl AppState {
         auth_cfg: &AuthConfig,
         dashboard: DashboardConfig,
         server_cfg: &ManagerServerConfig,
+        command_tx: Option<mpsc::Sender<AgentCommandRequest>>,
     ) -> Self {
         let secret = auth_cfg.jwt_secret.as_bytes();
         let auth = AuthMaterial {
@@ -71,8 +90,16 @@ impl AppState {
                 auth,
                 dashboard,
                 install,
+                command_tx,
             }),
         }
+    }
+
+    /// Bridge do manager-bin do wysyłania komend agentom. `None` gdy
+    /// AppState skonstruowany bez bridge (rzadkie).
+    #[must_use]
+    pub fn command_tx(&self) -> Option<&mpsc::Sender<AgentCommandRequest>> {
+        self.inner.command_tx.as_ref()
     }
 
     #[must_use]
