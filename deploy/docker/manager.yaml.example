@@ -24,7 +24,7 @@ server:
   # z ktorego pobierane sa .deb/.rpm — wersja MUSI matchowac binariom.
   public_grpc_endpoint: "manager.example.com:5443"
   public_rest_base_url: "https://manager.example.com"
-  agent_release_tag:    "v0.1.0-rc6"
+  agent_release_tag:    "v0.1.0-rc7"
   # REST API HTTPS (Sub-faza 1F) — reuse'uje server cert co gRPC (jeden
   # cert ma SAN dla obu portów). Quickstart wstawia te wartosci. Gdy
   # oba puste, REST = plain HTTP (dev / kompat. wsteczna).
