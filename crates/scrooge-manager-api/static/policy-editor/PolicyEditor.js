@@ -1,34 +1,46 @@
 // SPDX-License-Identifier: GPL-2.0-only
 //
-// Root controller policy editora (modal). W obecnej iteracji (Sub-faza 2F.2)
-// obsługuje tylko YamlMode — funkcjonalnie no-op względem starego inline
-// kodu z index.html (parity check). FormMode + ModeSwitch + split view
-// wjeżdżają w kolejnych sub-fazach.
+// Root controller policy editora (modal). Orkiestruje:
+// - Mode switching (Form ↔ YAML) z ModeSwitch w nagłówku.
+// - Lifecycle FormMode (split view) i YamlMode (full-width textarea).
+// - Validate / Save (woła backend API, aktualizuje ValidationPanel).
+// - Modal width toggle (4xl YAML / 6xl Form — split view potrzebuje szerszego).
 
-import { YamlMode } from './modes/YamlMode.js';
+import { FormMode } from './modes/FormMode.js';
+import { YamlMode, DEFAULT_TEMPLATE } from './modes/YamlMode.js';
 import { ValidationPanel } from './ui/ValidationPanel.js';
+import { ModeSwitch } from './ui/ModeSwitch.js';
+import { formToYaml, defaultFormState } from './codec/formToYaml.js';
 import * as api from './api/policies.js';
+
+const PREVIEW_DEBOUNCE_MS = 150;
 
 export class PolicyEditor {
   constructor() {
-    // DOM elements (modal istniejący w index.html, używamy istniejących id).
     this.modal = document.getElementById('policy-modal');
+    this.modalCard = this.modal?.querySelector(':scope > div'); // wrapper z max-w-*
     this.modeLabel = document.getElementById('policy-modal-mode');
-    this.bodyMount = document.getElementById('policy-yaml-input')?.parentElement; // body container
+    this.headerEl = this.modeLabel?.closest('.flex.items-center.justify-between');
+    this.bodyMount = document.getElementById('policy-validation')?.parentElement;
     this.validationMount = document.getElementById('policy-validation');
     this.validateBtn = document.getElementById('policy-validate-btn');
     this.saveBtn = document.getElementById('policy-save-btn');
 
-    this.editingName = null;     // null = new, string = edit
-    this.yamlMode = null;
+    // State.
+    this.editingName = null;
+    this.mode = 'form';        // 'form' | 'yaml' — startowy default dla new
+    this.formState = null;
+    this.yamlText = '';        // single source of truth dla Validate/Save
+    this.activeMode = null;    // referencja do FormMode lub YamlMode
+    this.modeSwitch = null;
+    this.modeSwitchMount = null;
+    this.activeBodyMount = null;
     this.validation = null;
+    this._previewTimer = null;
 
-    // Bind once — będziemy add/remove listeners przy open/close.
     this._onValidateClick = () => this._validate();
     this._onSaveClick = () => this._save();
-    this._onModalBackdropClick = (e) => {
-      if (e.target === this.modal) this.close();
-    };
+    this._onBackdropClick = (e) => { if (e.target === this.modal) this.close(); };
   }
 
   /**
@@ -39,39 +51,57 @@ export class PolicyEditor {
     this.editingName = name;
     this.modeLabel.textContent = name ? 'Edit' : 'New';
 
-    // Validation panel (re-mount na czysto).
-    this.validation = new ValidationPanel({ mount: this.validationMount });
-    this.validation.clear();
-
-    // Initial YAML — dla edit pobierz z managera, dla new użyj template'u.
-    let initialYaml;
+    // Initial state — dla edit pobierz YAML, dla new użyj template'u + defaultFormState.
     if (name) {
       try {
         const policy = await api.getPolicy(name);
-        initialYaml = policy.content_yaml;
+        this.yamlText = policy.content_yaml;
+        this.formState = defaultFormState(); // 2F.10 doda yamlToForm parsing
+        // 2F.10: zdecyduje smart default mode na podstawie supportability.
+        this.mode = 'yaml';
       } catch (err) {
         this._toast('Error loading policy: ' + err.message);
         return;
       }
+    } else {
+      this.formState = defaultFormState();
+      this.yamlText = formToYaml(this.formState);
+      this.mode = 'form';
     }
 
-    // Stwórz mount point dla mode'u (zastępujemy stary textarea).
-    // body container ma w sobie: <p>schema info</p>, <textarea>, <div#validation>.
-    // Czyścimy textarea (jeśli zostało coś z poprzedniego open'a) i mountujemy YamlMode.
-    const oldTextarea = document.getElementById('policy-yaml-input');
-    if (oldTextarea) oldTextarea.remove();
+    // ── Sprzątanie poprzedniego open'a ─────────────────────────────────
+    this._unmountBody();
 
-    // Wstaw nowy mount dla mode'u przed validation div.
-    const modeMount = document.createElement('div');
-    this.bodyMount.insertBefore(modeMount, this.validationMount);
+    // ── ModeSwitch w nagłówku (mount przed × button) ───────────────────
+    if (!this.modeSwitchMount) {
+      this.modeSwitchMount = document.createElement('div');
+      this.modeSwitchMount.id = 'policy-mode-switch';
+      this.modeSwitchMount.className = 'ml-4';
+      // headerEl: <div flex items-center justify-between>
+      //   <h3>...</h3>     ← mode label
+      //   <button>×</button>
+      // Wstawiamy mode switch przed × button żeby się trzymał w header'ze.
+      const closeBtn = this.headerEl.querySelector('button');
+      this.headerEl.insertBefore(this.modeSwitchMount, closeBtn);
+    }
+    this.modeSwitch = new ModeSwitch({
+      mount: this.modeSwitchMount,
+      initialMode: this.mode,
+      onSwitch: (m) => this._handleSwitch(m),
+    });
+    this.modeSwitch.render();
 
-    this.yamlMode = new YamlMode({ mount: modeMount, initialYaml });
-    this.yamlMode.render();
+    // ── Validation panel ──────────────────────────────────────────────
+    this.validation = new ValidationPanel({ mount: this.validationMount });
+    this.validation.clear();
 
-    // Podpinamy buttony.
+    // ── Mount aktualny mode ───────────────────────────────────────────
+    this._mountMode();
+
+    // ── Buttony ──────────────────────────────────────────────────────
     this.validateBtn.addEventListener('click', this._onValidateClick);
     this.saveBtn.addEventListener('click', this._onSaveClick);
-    this.modal.addEventListener('click', this._onModalBackdropClick);
+    this.modal.addEventListener('click', this._onBackdropClick);
 
     this.modal.classList.remove('hidden');
   }
@@ -81,27 +111,117 @@ export class PolicyEditor {
 
     this.validateBtn.removeEventListener('click', this._onValidateClick);
     this.saveBtn.removeEventListener('click', this._onSaveClick);
-    this.modal.removeEventListener('click', this._onModalBackdropClick);
+    this.modal.removeEventListener('click', this._onBackdropClick);
 
-    if (this.yamlMode) {
-      this.yamlMode.destroy();
-      this.yamlMode = null;
+    this._unmountBody();
+
+    if (this.modeSwitch) {
+      this.modeSwitch.destroy();
+      this.modeSwitch = null;
+    }
+    if (this.modeSwitchMount && this.modeSwitchMount.parentNode) {
+      this.modeSwitchMount.parentNode.removeChild(this.modeSwitchMount);
+      this.modeSwitchMount = null;
     }
     if (this.validation) {
       this.validation.destroy();
       this.validation = null;
     }
+
     this.editingName = null;
   }
 
   // ── private ────────────────────────────────────────────────────────────
 
-  /** @returns {Promise<boolean>} czy YAML jest valid (do Save logic) */
+  _mountMode() {
+    // Stwórz mount point dla aktywnego mode'u (wstawiamy przed validation div).
+    this.activeBodyMount = document.createElement('div');
+    this.bodyMount.insertBefore(this.activeBodyMount, this.validationMount);
+
+    // Modal width: Form mode potrzebuje szerszego (split view), YAML wąski.
+    this._setModalWidth(this.mode === 'form' ? '6xl' : '4xl');
+
+    if (this.mode === 'form') {
+      this.activeMode = new FormMode({
+        mount: this.activeBodyMount,
+        initialFormState: this.formState,
+        onChange: (fs) => this._handleFormChange(fs),
+      });
+    } else {
+      this.activeMode = new YamlMode({
+        mount: this.activeBodyMount,
+        initialYaml: this.yamlText,
+        onChange: (txt) => { this.yamlText = txt; },
+      });
+    }
+    this.activeMode.render();
+  }
+
+  _unmountBody() {
+    if (this._previewTimer) {
+      clearTimeout(this._previewTimer);
+      this._previewTimer = null;
+    }
+    if (this.activeMode) {
+      this.activeMode.destroy();
+      this.activeMode = null;
+    }
+    if (this.activeBodyMount && this.activeBodyMount.parentNode) {
+      this.activeBodyMount.parentNode.removeChild(this.activeBodyMount);
+      this.activeBodyMount = null;
+    }
+  }
+
+  _handleFormChange(newFormState) {
+    this.formState = newFormState;
+    // Debounce regeneracji YAML preview — przy szybkim typing'u keystroke'i
+    // grupują się i regeneracja idzie raz na ~150ms.
+    if (this._previewTimer) clearTimeout(this._previewTimer);
+    this._previewTimer = setTimeout(() => {
+      this.yamlText = formToYaml(this.formState);
+      if (this.activeMode && typeof this.activeMode.updatePreview === 'function') {
+        this.activeMode.updatePreview(this.yamlText);
+      }
+      this._previewTimer = null;
+    }, PREVIEW_DEBOUNCE_MS);
+  }
+
+  _handleSwitch(target) {
+    if (target === this.mode) return;
+    // 2F.10: tu wejdzie yamlToForm + ConfirmDialog przy YAML→Form z unsupported.
+    // Na razie prosty switch — Form→YAML zawsze działa (yamlText z formToYaml),
+    // YAML→Form pomija parsing (resetuje formState do default + ghost).
+    if (target === 'yaml') {
+      // Zapisz wygenerowany YAML jako tekst do edycji.
+      this.yamlText = formToYaml(this.formState);
+    } else {
+      // Form ← YAML: na razie reset do default formState. Pełen parsing 2F.10.
+      this.formState = defaultFormState();
+    }
+    this.mode = target;
+    this._unmountBody();
+    this._mountMode();
+    this.modeSwitch.setMode(target);
+  }
+
+  _setModalWidth(size) {
+    // Tailwind 4xl / 6xl — toggle na wrapper'ze max-w-*.
+    if (!this.modalCard) return;
+    this.modalCard.classList.remove('max-w-4xl', 'max-w-6xl');
+    this.modalCard.classList.add(size === '6xl' ? 'max-w-6xl' : 'max-w-4xl');
+  }
+
   async _validate() {
-    const yaml = this.yamlMode.getYaml();
+    // yamlText jest single source of truth dla Validate — w form mode
+    // został wygenerowany przez debounce (lub przy switchu), w yaml mode
+    // jest aktualizowany na każde keystroke przez onChange.
+    if (this.mode === 'form') {
+      // Wymuś świeży regenerate (debounce mogło nie odpalić jeszcze).
+      this.yamlText = formToYaml(this.formState);
+    }
     this.validation.loading();
     try {
-      const resp = await api.validate(yaml);
+      const resp = await api.validate(this.yamlText);
       if (resp.valid) {
         this.validation.ok(resp);
         return true;
@@ -117,18 +237,15 @@ export class PolicyEditor {
   async _save() {
     const ok = await this._validate();
     if (!ok) return;
-
-    const yaml = this.yamlMode.getYaml();
     try {
       if (this.editingName) {
-        const body = await api.update(this.editingName, yaml);
+        const body = await api.update(this.editingName, this.yamlText);
         this._toast('Policy updated (v' + body.version + ')');
       } else {
-        await api.create(yaml);
+        await api.create(this.yamlText);
         this._toast('Policy created');
       }
       this.close();
-      // Refresh tabeli polityk — parent ma loadPolicies() jako global.
       if (typeof window.loadPolicies === 'function') window.loadPolicies();
     } catch (err) {
       this._toast('Save failed: ' + err.message);
@@ -136,8 +253,10 @@ export class PolicyEditor {
   }
 
   _toast(msg) {
-    // Parent dashboardu eksponuje toast() — używamy gdy dostępne, fallback alert.
     if (typeof window.toast === 'function') window.toast(msg);
     else console.log('[toast]', msg);
   }
 }
+
+// Eksport stałych przydatnych dla testów / debug.
+export { DEFAULT_TEMPLATE };

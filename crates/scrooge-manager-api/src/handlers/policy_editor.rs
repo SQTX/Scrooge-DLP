@@ -20,10 +20,15 @@ const POLICY_EDITOR_JS: &str = include_str!("../../static/policy-editor/PolicyEd
 
 // Modes.
 const YAML_MODE_JS: &str = include_str!("../../static/policy-editor/modes/YamlMode.js");
+const FORM_MODE_JS: &str = include_str!("../../static/policy-editor/modes/FormMode.js");
 
 // UI helpers.
 const VALIDATION_PANEL_JS: &str =
     include_str!("../../static/policy-editor/ui/ValidationPanel.js");
+const MODE_SWITCH_JS: &str = include_str!("../../static/policy-editor/ui/ModeSwitch.js");
+
+// Codec.
+const FORM_TO_YAML_JS: &str = include_str!("../../static/policy-editor/codec/formToYaml.js");
 
 // API wrappers.
 const API_POLICIES_JS: &str = include_str!("../../static/policy-editor/api/policies.js");
@@ -39,7 +44,10 @@ pub async fn asset(Path(path): Path<String>) -> Response {
         "index.js" => INDEX_JS,
         "PolicyEditor.js" => POLICY_EDITOR_JS,
         "modes/YamlMode.js" => YAML_MODE_JS,
+        "modes/FormMode.js" => FORM_MODE_JS,
         "ui/ValidationPanel.js" => VALIDATION_PANEL_JS,
+        "ui/ModeSwitch.js" => MODE_SWITCH_JS,
+        "codec/formToYaml.js" => FORM_TO_YAML_JS,
         "api/policies.js" => API_POLICIES_JS,
         "api/auth.js" => API_AUTH_JS,
         _ => return (StatusCode::NOT_FOUND, "not found").into_response(),
