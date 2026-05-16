@@ -349,3 +349,6 @@ dev-certs/
 agent-data/
 *.cert
 agent.id
+
+# ── Brainstorming session artifacts (visual companion mockups) ──────────────
+.superpowers/
