@@ -10,7 +10,9 @@ import { FormMode } from './modes/FormMode.js';
 import { YamlMode, DEFAULT_TEMPLATE } from './modes/YamlMode.js';
 import { ValidationPanel } from './ui/ValidationPanel.js';
 import { ModeSwitch } from './ui/ModeSwitch.js';
+import { confirmDialog } from './ui/ConfirmDialog.js';
 import { formToYaml, defaultFormState } from './codec/formToYaml.js';
+import { yamlToForm } from './codec/yamlToForm.js';
 import * as api from './api/policies.js';
 
 const PREVIEW_DEBOUNCE_MS = 150;
@@ -31,6 +33,7 @@ export class PolicyEditor {
     this.mode = 'form';        // 'form' | 'yaml' — startowy default dla new
     this.formState = null;
     this.yamlText = '';        // single source of truth dla Validate/Save
+    this.ghostYaml = null;     // YAML zachowany przy YAML→Form jeśli unsupported
     this.activeMode = null;    // referencja do FormMode lub YamlMode
     this.modeSwitch = null;
     this.modeSwitchMount = null;
@@ -51,14 +54,29 @@ export class PolicyEditor {
     this.editingName = name;
     this.modeLabel.textContent = name ? 'Edit' : 'New';
 
-    // Initial state — dla edit pobierz YAML, dla new użyj template'u + defaultFormState.
+    // Initial state — smart default:
+    //   - New policy → Form mode, defaultFormState.
+    //   - Edit existing → pobierz YAML, parsuj przez backend (yamlToForm).
+    //       - form-friendly → Form mode z wypełnionymi sekcjami
+    //       - z unsupported → YAML mode (full-width textarea) — user nie
+    //         dostanie ConfirmDialog'a przy otwieraniu, tylko subtle hint
+    //         (TODO: hint w UI; na razie default mode wystarczy).
+    this.ghostYaml = null;
     if (name) {
       try {
         const policy = await api.getPolicy(name);
         this.yamlText = policy.content_yaml;
-        this.formState = defaultFormState(); // 2F.10 doda yamlToForm parsing
-        // 2F.10: zdecyduje smart default mode na podstawie supportability.
-        this.mode = 'yaml';
+        const result = await yamlToForm(this.yamlText);
+        if (result.ok) {
+          this.formState = result.formState;
+          this.ghostYaml = result.ghostYaml;
+          this.mode = result.unsupported.length === 0 ? 'form' : 'yaml';
+        } else {
+          // YAML invalid (mało prawdopodobne — był valid przy poprzednim save).
+          // Fallback: otwórz w YAML mode, user zobaczy błąd przy Validate.
+          this.formState = defaultFormState();
+          this.mode = 'yaml';
+        }
       } catch (err) {
         this._toast('Error loading policy: ' + err.message);
         return;
@@ -186,18 +204,44 @@ export class PolicyEditor {
     }, PREVIEW_DEBOUNCE_MS);
   }
 
-  _handleSwitch(target) {
+  async _handleSwitch(target) {
     if (target === this.mode) return;
-    // 2F.10: tu wejdzie yamlToForm + ConfirmDialog przy YAML→Form z unsupported.
-    // Na razie prosty switch — Form→YAML zawsze działa (yamlText z formToYaml),
-    // YAML→Form pomija parsing (resetuje formState do default + ghost).
+
     if (target === 'yaml') {
-      // Zapisz wygenerowany YAML jako tekst do edycji.
+      // Form → YAML: wygeneruj świeży YAML ze stanu formularza.
+      // Jeśli był ghost (preserved unsupported sections z poprzedniego
+      // YAML→Form switcha) — Save go merguje. Na razie prosty replace.
       this.yamlText = formToYaml(this.formState);
-    } else {
-      // Form ← YAML: na razie reset do default formState. Pełen parsing 2F.10.
-      this.formState = defaultFormState();
+      this._performSwitch(target);
+      return;
     }
+
+    // YAML → Form: parsuj YAML przez backend Validate (single source of truth).
+    const result = await yamlToForm(this.yamlText);
+    if (!result.ok) {
+      this._toast('Najpierw napraw YAML: ' + result.error);
+      // Nie przełączamy — switch w UI zostaje przy YAML mode.
+      return;
+    }
+    if (result.unsupported.length > 0) {
+      const confirmed = await confirmDialog({
+        title: 'Polityka używa funkcji których form nie pokrywa',
+        message:
+          'Po przełączeniu na Form mode poniższe sekcje nie będą widoczne '
+          + 'w formularzu, ale pozostają w YAML i Save je zachowa. '
+          + 'Kontynuować?',
+        items: result.unsupported,
+        confirmLabel: 'Continue → Form',
+        cancelLabel: 'Cancel',
+      });
+      if (!confirmed) return; // zostań w YAML mode
+    }
+    this.formState = result.formState;
+    this.ghostYaml = result.ghostYaml;
+    this._performSwitch(target);
+  }
+
+  _performSwitch(target) {
     this.mode = target;
     this._unmountBody();
     this._mountMode();

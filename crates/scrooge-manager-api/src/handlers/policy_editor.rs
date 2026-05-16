@@ -26,9 +26,14 @@ const FORM_MODE_JS: &str = include_str!("../../static/policy-editor/modes/FormMo
 const VALIDATION_PANEL_JS: &str =
     include_str!("../../static/policy-editor/ui/ValidationPanel.js");
 const MODE_SWITCH_JS: &str = include_str!("../../static/policy-editor/ui/ModeSwitch.js");
+const CONFIRM_DIALOG_JS: &str =
+    include_str!("../../static/policy-editor/ui/ConfirmDialog.js");
 
 // Codec.
 const FORM_TO_YAML_JS: &str = include_str!("../../static/policy-editor/codec/formToYaml.js");
+const YAML_TO_FORM_JS: &str = include_str!("../../static/policy-editor/codec/yamlToForm.js");
+const SUPPORTABILITY_JS: &str =
+    include_str!("../../static/policy-editor/codec/supportability.js");
 
 // Form sections.
 const METADATA_SECTION_JS: &str =
@@ -59,7 +64,10 @@ pub async fn asset(Path(path): Path<String>) -> Response {
         "modes/FormMode.js" => FORM_MODE_JS,
         "ui/ValidationPanel.js" => VALIDATION_PANEL_JS,
         "ui/ModeSwitch.js" => MODE_SWITCH_JS,
+        "ui/ConfirmDialog.js" => CONFIRM_DIALOG_JS,
         "codec/formToYaml.js" => FORM_TO_YAML_JS,
+        "codec/yamlToForm.js" => YAML_TO_FORM_JS,
+        "codec/supportability.js" => SUPPORTABILITY_JS,
         "sections/MetadataSection.js" => METADATA_SECTION_JS,
         "sections/RuleSection.js" => RULE_SECTION_JS,
         "sections/SourceListEditor.js" => SOURCE_LIST_EDITOR_JS,
