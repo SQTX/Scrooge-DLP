@@ -58,15 +58,40 @@ export function formToYaml(formState, _ghostYaml = null) {
     if (r.notify_user) lines.push('      notify_user: true');
     if (r.forward_to_siem) lines.push('      forward_to_siem: true');
 
-    // Sources / destinations żyją na poziomie formState, nie rule —
+    // Sources / destinations / conditions żyją na poziomie formState,
     // ale w YAMLu wjeżdżają wewnątrz rules.outbound[0]. Emit'ujemy tutaj.
     emitSources(lines, formState.sources ?? []);
     emitDestinations(lines, formState.destinations ?? []);
-
-    // TODO(2F.7): conditions
+    emitConditions(lines, formState.conditions);
   }
 
   return lines.join('\n') + '\n';
+}
+
+function emitConditions(lines, cond) {
+  if (!cond) return;
+  const hasAny =
+    cond.file_size_min || cond.file_size_max
+    || (Array.isArray(cond.file_extensions) && cond.file_extensions.length)
+    || cond.filename_regex || cond.path_regex;
+  if (!hasAny) return;
+  lines.push('      conditions:');
+  if (cond.file_size_min) {
+    lines.push(`        file_size_min: ${yamlString(String(cond.file_size_min))}`);
+  }
+  if (cond.file_size_max) {
+    lines.push(`        file_size_max: ${yamlString(String(cond.file_size_max))}`);
+  }
+  if (Array.isArray(cond.file_extensions) && cond.file_extensions.length) {
+    const items = cond.file_extensions.map(yamlString).join(', ');
+    lines.push(`        file_extensions: [${items}]`);
+  }
+  if (cond.filename_regex) {
+    lines.push(`        filename_regex: ${yamlString(cond.filename_regex)}`);
+  }
+  if (cond.path_regex) {
+    lines.push(`        path_regex: ${yamlString(cond.path_regex)}`);
+  }
 }
 
 function emitSources(lines, sources) {

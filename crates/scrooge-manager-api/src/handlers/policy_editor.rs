@@ -39,6 +39,8 @@ const SOURCE_LIST_EDITOR_JS: &str =
     include_str!("../../static/policy-editor/sections/SourceListEditor.js");
 const DESTINATION_LIST_EDITOR_JS: &str =
     include_str!("../../static/policy-editor/sections/DestinationListEditor.js");
+const CONDITIONS_SECTION_JS: &str =
+    include_str!("../../static/policy-editor/sections/ConditionsSection.js");
 
 // API wrappers.
 const API_POLICIES_JS: &str = include_str!("../../static/policy-editor/api/policies.js");
@@ -62,6 +64,7 @@ pub async fn asset(Path(path): Path<String>) -> Response {
         "sections/RuleSection.js" => RULE_SECTION_JS,
         "sections/SourceListEditor.js" => SOURCE_LIST_EDITOR_JS,
         "sections/DestinationListEditor.js" => DESTINATION_LIST_EDITOR_JS,
+        "sections/ConditionsSection.js" => CONDITIONS_SECTION_JS,
         "api/policies.js" => API_POLICIES_JS,
         "api/auth.js" => API_AUTH_JS,
         _ => return (StatusCode::NOT_FOUND, "not found").into_response(),

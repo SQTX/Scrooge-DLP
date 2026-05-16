@@ -12,6 +12,7 @@ import { MetadataSection } from '../sections/MetadataSection.js';
 import { RuleSection } from '../sections/RuleSection.js';
 import { SourceListEditor } from '../sections/SourceListEditor.js';
 import { DestinationListEditor } from '../sections/DestinationListEditor.js';
+import { ConditionsSection } from '../sections/ConditionsSection.js';
 
 export class FormMode {
   /**
@@ -81,11 +82,15 @@ export class FormMode {
     });
     this.sections.destinations.render();
 
-    // Placeholder dla Conditions (2F.7).
-    const todo = document.createElement('div');
-    todo.className = 'p-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-500';
-    todo.textContent = 'Conditions (file_size, extensions, regex) — wjadą w kolejnym commit\'cie Sub-fazy 2F.';
-    this.leftPane.appendChild(todo);
+    // Conditions (collapsible, opcjonalne).
+    const condsMount = document.createElement('div');
+    this.leftPane.appendChild(condsMount);
+    this.sections.conditions = new ConditionsSection({
+      mount: condsMount,
+      initialState: this.formState.conditions ?? null,
+      onChange: (c) => this._sectionChanged('conditions', c),
+    });
+    this.sections.conditions.render();
 
     grid.appendChild(this.leftPane);
 
