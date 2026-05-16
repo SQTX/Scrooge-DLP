@@ -4,13 +4,15 @@
 // zero zewnętrznych libów. Kolejność pól ustalona — ten sam formState
 // zawsze daje ten sam YAML (bit-equal).
 //
-// Sub-faza 2F.3: skeleton. Obecnie obsługuje tylko metadata + priority
-// (placeholder przed dodaniem sections w 2F.4+). Pełna implementacja
-// per-section wchodzi razem z odpowiednim section editorem.
+// Sub-faza 2F.4: dodano emit'owanie rule (id, name, severity, action,
+// message, notify_user, forward_to_siem). Sources/destinations/conditions
+// wjadą w 2F.5-7.
+
+import { defaultRuleState } from '../sections/RuleSection.js';
 
 const DEFAULT_FORM_STATE = {
   metadata: { name: 'my-policy', description: '', priority: 100 },
-  rule: null,
+  rule: defaultRuleState(),
   sources: [],
   destinations: [],
   conditions: null,
@@ -43,10 +45,20 @@ export function formToYaml(formState, _ghostYaml = null) {
   }
   lines.push(`priority: ${Number.isFinite(md.priority) ? md.priority : 100}`);
 
-  // TODO(2F.4+): rule / sources / destinations / conditions emit'owanie po
-  // dodaniu odpowiednich section editorów. Na razie pomijamy — Validate
-  // backend i tak akceptuje policy bez rules (puste outbound = no-op rule
-  // set, valid syntactically).
+  // ── Rule ─────────────────────────────────────────────────────────────
+  const r = formState.rule;
+  if (r && r.id) {
+    lines.push('rules:');
+    lines.push('  outbound:');
+    lines.push(`    - id: ${yamlString(r.id)}`);
+    if (r.name) lines.push(`      name: ${yamlString(r.name)}`);
+    lines.push(`      severity: ${r.severity ?? 'medium'}`);
+    lines.push(`      action: ${r.action ?? 'log_only'}`);
+    if (r.message) lines.push(`      message: ${yamlString(r.message)}`);
+    if (r.notify_user) lines.push('      notify_user: true');
+    if (r.forward_to_siem) lines.push('      forward_to_siem: true');
+    // TODO(2F.5-7): sources / destinations / conditions
+  }
 
   return lines.join('\n') + '\n';
 }

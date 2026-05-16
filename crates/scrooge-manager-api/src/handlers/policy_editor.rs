@@ -30,6 +30,12 @@ const MODE_SWITCH_JS: &str = include_str!("../../static/policy-editor/ui/ModeSwi
 // Codec.
 const FORM_TO_YAML_JS: &str = include_str!("../../static/policy-editor/codec/formToYaml.js");
 
+// Form sections.
+const METADATA_SECTION_JS: &str =
+    include_str!("../../static/policy-editor/sections/MetadataSection.js");
+const RULE_SECTION_JS: &str =
+    include_str!("../../static/policy-editor/sections/RuleSection.js");
+
 // API wrappers.
 const API_POLICIES_JS: &str = include_str!("../../static/policy-editor/api/policies.js");
 const API_AUTH_JS: &str = include_str!("../../static/policy-editor/api/auth.js");
@@ -48,6 +54,8 @@ pub async fn asset(Path(path): Path<String>) -> Response {
         "ui/ValidationPanel.js" => VALIDATION_PANEL_JS,
         "ui/ModeSwitch.js" => MODE_SWITCH_JS,
         "codec/formToYaml.js" => FORM_TO_YAML_JS,
+        "sections/MetadataSection.js" => METADATA_SECTION_JS,
+        "sections/RuleSection.js" => RULE_SECTION_JS,
         "api/policies.js" => API_POLICIES_JS,
         "api/auth.js" => API_AUTH_JS,
         _ => return (StatusCode::NOT_FOUND, "not found").into_response(),

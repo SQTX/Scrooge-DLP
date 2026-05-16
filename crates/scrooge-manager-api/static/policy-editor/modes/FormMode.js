@@ -8,6 +8,8 @@
 // gdy state.yamlText się zmienia (po debounce z formToYaml).
 
 import { formToYaml } from '../codec/formToYaml.js';
+import { MetadataSection } from '../sections/MetadataSection.js';
+import { RuleSection } from '../sections/RuleSection.js';
 
 export class FormMode {
   /**
@@ -23,6 +25,7 @@ export class FormMode {
     this.onChange = onChange;
     this.leftPane = null;
     this.previewPane = null;
+    this.sections = {};
   }
 
   render() {
@@ -34,8 +37,34 @@ export class FormMode {
 
     // ── Lewa pane: form sections ─────────────────────────────────────
     this.leftPane = document.createElement('div');
-    this.leftPane.className = 'space-y-3';
-    this._renderLeftPlaceholder();
+    this.leftPane.className = 'space-y-4';
+
+    // Metadata section.
+    const metadataMount = document.createElement('div');
+    this.leftPane.appendChild(metadataMount);
+    this.sections.metadata = new MetadataSection({
+      mount: metadataMount,
+      initialState: this.formState.metadata,
+      onChange: (md) => this._sectionChanged('metadata', md),
+    });
+    this.sections.metadata.render();
+
+    // Rule section.
+    const ruleMount = document.createElement('div');
+    this.leftPane.appendChild(ruleMount);
+    this.sections.rule = new RuleSection({
+      mount: ruleMount,
+      initialState: this.formState.rule ?? {},
+      onChange: (r) => this._sectionChanged('rule', r),
+    });
+    this.sections.rule.render();
+
+    // Placeholder dla kolejnych sekcji (2F.5-7).
+    const todo = document.createElement('div');
+    todo.className = 'p-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-500';
+    todo.textContent = 'Sources, Destinations, Conditions — wjadą w kolejnych commitach Sub-fazy 2F.';
+    this.leftPane.appendChild(todo);
+
     grid.appendChild(this.leftPane);
 
     // ── Prawa pane: YAML preview read-only ───────────────────────────
@@ -59,22 +88,9 @@ export class FormMode {
     this.root.appendChild(grid);
   }
 
-  _renderLeftPlaceholder() {
-    const note = document.createElement('div');
-    note.className = 'p-4 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900';
-    // Manualny build DOM — bez innerHTML (XSS safe by construction).
-    const head = document.createElement('strong');
-    head.textContent = 'Form mode w budowie';
-    note.appendChild(head);
-    note.appendChild(document.createElement('br'));
-    const body = document.createTextNode(
-      'Sekcje formularza (Metadata, Rule, Sources, Destinations, Conditions) '
-      + 'wjadą w kolejnych commitach Sub-fazy 2F. Na razie używaj YAML mode '
-      + '(przełącznik w nagłówku) do faktycznej edycji. Prawa pane pokazuje '
-      + 'YAML preview wygenerowany z domyślnego formState.',
-    );
-    note.appendChild(body);
-    this.leftPane.appendChild(note);
+  _sectionChanged(sectionKey, sliceState) {
+    this.formState = { ...this.formState, [sectionKey]: sliceState };
+    if (this.onChange) this.onChange(this.formState);
   }
 
   /** Parent woła gdy yamlText (= formToYaml(formState)) się zmienił. */
@@ -88,6 +104,10 @@ export class FormMode {
   }
 
   destroy() {
+    for (const s of Object.values(this.sections)) {
+      if (s && typeof s.destroy === 'function') s.destroy();
+    }
+    this.sections = {};
     while (this.root.firstChild) this.root.removeChild(this.root.firstChild);
     this.leftPane = null;
     this.previewPane = null;
