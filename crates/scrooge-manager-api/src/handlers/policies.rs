@@ -104,6 +104,13 @@ pub struct ValidateResponse {
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<u32>,
+    /// Sparsowana polityka (JSON) — używana przez dashboard form mode do
+    /// rekonstrukcji pól formularza z YAMLa. Pole dostępne tylko gdy
+    /// `valid=true`. Frontend traktuje to jako nieprzezroczystą strukturę
+    /// (kształt dyktowany przez `scrooge_policy::Policy`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Object)]
+    pub parsed: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, FromRow, ToSchema)]
@@ -588,12 +595,17 @@ pub async fn validate(
             let compiled = policy
                 .compile()
                 .map_err(|e| ApiError::Internal(format!("compile: {e}")))?;
+            // Serializuj sparsowaną politykę do JSON-a dla dashboardu (form mode).
+            // `Policy` implementuje `Serialize`, więc to nie powinno fail'ować —
+            // jeśli jednak, zwracamy None zamiast 500 (parsed jest opcjonalne).
+            let parsed = serde_json::to_value(&policy).ok();
             Ok(Json(ValidateResponse {
                 valid: true,
                 errors: vec![],
                 hash: Some(compiled.hash),
                 name: Some(policy.metadata.name),
                 version: Some(policy.metadata.version),
+                parsed,
             }))
         },
         Err(e) => Ok(Json(ValidateResponse {
@@ -602,6 +614,7 @@ pub async fn validate(
             hash: None,
             name: None,
             version: None,
+            parsed: None,
         })),
     }
 }
