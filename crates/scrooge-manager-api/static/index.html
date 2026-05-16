@@ -224,7 +224,7 @@
         <h3 class="text-lg font-semibold">
           <span id="policy-modal-mode">New</span> policy
         </h3>
-        <button onclick="closePolicyModal()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        <button onclick="window.closePolicyEditor && window.closePolicyEditor()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
       </div>
       <div class="px-6 py-4 space-y-3 overflow-y-auto flex-1">
         <p class="text-xs text-gray-500">
@@ -243,7 +243,7 @@
           Validate (dry-run)
         </button>
         <div class="flex space-x-2">
-          <button onclick="closePolicyModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded">Cancel</button>
+          <button onclick="window.closePolicyEditor && window.closePolicyEditor()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-medium rounded">Cancel</button>
           <button id="policy-save-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded">Save</button>
         </div>
       </div>
@@ -854,7 +854,8 @@
     // ═══════════════════════════════════════════════════════════════
 
     let currentTab = 'agents';
-    let editingPolicyName = null; // null = new, "name" = edit
+    // editingPolicyName + cały lifecycle policy modal'a żyje teraz w
+    // static/policy-editor/ module — patrz window.openPolicyEditor.
 
     function switchTab(tab) {
       currentTab = tab;
@@ -930,7 +931,7 @@
         const editBtn = document.createElement('button');
         editBtn.className = 'text-blue-600 hover:text-blue-800';
         editBtn.textContent = 'Edit';
-        editBtn.addEventListener('click', () => openPolicyModal(p.name));
+        editBtn.addEventListener('click', () => window.openPolicyEditor(p.name));
         const histBtn = document.createElement('button');
         histBtn.className = 'text-gray-500 hover:text-gray-700';
         histBtn.textContent = 'History';
@@ -949,125 +950,14 @@
     }
 
     $('policy-refresh-btn').addEventListener('click', () => { loadPolicies(); toast('Refreshed'); });
-    $('policy-new-btn').addEventListener('click', () => openPolicyModal(null));
+    $('policy-new-btn').addEventListener('click', () => window.openPolicyEditor(null));
 
-    async function openPolicyModal(name) {
-      editingPolicyName = name;
-      $('policy-modal-mode').textContent = name ? 'Edit' : 'New';
-      $('policy-validation').textContent = '';
-      $('policy-validation').className = 'text-xs';
-
-      if (name) {
-        // Pobierz aktualny YAML dla edycji
-        try {
-          const r = await fetch('/api/v1/policies/' + encodeURIComponent(name), { headers: await authHeaders() });
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          const p = await r.json();
-          $('policy-yaml-input').value = p.content_yaml;
-        } catch (err) {
-          toast('Error loading policy: ' + err.message);
-          return;
-        }
-      } else {
-        $('policy-yaml-input').value =
-          'apiVersion: scroogedlp.io/v1\n' +
-          'kind: Policy\n' +
-          'metadata:\n' +
-          '  name: my-policy\n' +
-          '  description: "Opis polityki"\n' +
-          'priority: 100\n' +
-          'rules:\n' +
-          '  outbound:\n' +
-          '    - id: block-finance-to-usb\n' +
-          '      name: "Block finance files to USB"\n' +
-          '      severity: high\n' +
-          '      action: block\n' +
-          '      sources:\n' +
-          '        - type: directory\n' +
-          '          paths: ["/srv/finance/**"]\n' +
-          '      destinations:\n' +
-          '        - type: usb\n';
-      }
-      $('policy-modal').classList.remove('hidden');
-    }
-
-    window.closePolicyModal = () => {
-      $('policy-modal').classList.add('hidden');
-      editingPolicyName = null;
-    };
-    $('policy-modal').addEventListener('click', (e) => {
-      if (e.target.id === 'policy-modal') closePolicyModal();
-    });
-
-    async function validatePolicy() {
-      const yaml = $('policy-yaml-input').value;
-      const validEl = $('policy-validation');
-      validEl.textContent = 'Walidacja…';
-      validEl.className = 'text-xs text-gray-500';
-      try {
-        const r = await fetch('/api/v1/policies/validate', {
-          method: 'POST',
-          headers: await authHeaders(),
-          body: JSON.stringify({ content_yaml: yaml }),
-        });
-        const body = await r.json();
-        if (body.valid) {
-          validEl.textContent = '✓ Valid — ' + body.name + ' v' + body.version
-            + ' (hash: ' + body.hash.slice(0, 16) + '…)';
-          validEl.className = 'text-xs text-green-700';
-          return true;
-        } else {
-          // Bezpieczne renderowanie listy błędów (potencjalnie attacker-controlled YAML).
-          while (validEl.firstChild) validEl.removeChild(validEl.firstChild);
-          const head = document.createElement('div');
-          head.className = 'font-semibold mb-1';
-          head.textContent = '✗ Invalid:';
-          validEl.appendChild(head);
-          for (const err of body.errors) {
-            const li = document.createElement('div');
-            li.className = 'pl-3';
-            li.textContent = '• ' + err;
-            validEl.appendChild(li);
-          }
-          validEl.className = 'text-xs text-red-700';
-          return false;
-        }
-      } catch (err) {
-        validEl.textContent = 'Validate error: ' + err.message;
-        validEl.className = 'text-xs text-red-700';
-        return false;
-      }
-    }
-
-    $('policy-validate-btn').addEventListener('click', validatePolicy);
-
-    $('policy-save-btn').addEventListener('click', async () => {
-      const ok = await validatePolicy();
-      if (!ok) return;
-
-      const yaml = $('policy-yaml-input').value;
-      const headers = await authHeaders();
-      const isEdit = !!editingPolicyName;
-      const url = isEdit
-        ? '/api/v1/policies/' + encodeURIComponent(editingPolicyName)
-        : '/api/v1/policies';
-      const method = isEdit ? 'PUT' : 'POST';
-      const body = JSON.stringify({ content_yaml: yaml, change_reason: isEdit ? 'edit via dashboard' : 'created via dashboard' });
-
-      try {
-        const r = await fetch(url, { method, headers, body });
-        const respBody = await r.json();
-        if (!r.ok) {
-          toast('Save failed: ' + (respBody.message || ('HTTP ' + r.status)));
-          return;
-        }
-        toast(isEdit ? 'Policy updated (v' + respBody.version + ')' : 'Policy created');
-        closePolicyModal();
-        loadPolicies();
-      } catch (err) {
-        toast('Save error: ' + err.message);
-      }
-    });
+    // Bridges dla policy-editor module'a — handlery + helpery z parent dashboardu.
+    // Moduł żyje w osobnym <script type="module"> i nie ma scope'u do tych funkcji
+    // bez globala.
+    window.authHeaders = authHeaders;
+    window.toast = toast;
+    window.loadPolicies = loadPolicies;
 
     async function deletePolicy(name) {
       if (!confirm('Usunąć policy „' + name + '"? Historia wersji zostanie zachowana.')) return;
@@ -1213,5 +1103,10 @@
       if (localStorage.getItem(TOKEN_KEY)) showMain(); else showLogin();
     })();
   </script>
+
+  <!-- Policy editor (Sub-faza 2F) — modułowy controller w osobnym folderze.
+       Module ładuje się asynchronicznie; window.openPolicyEditor(name) jest
+       jego entry point'em (handlery przycisków w głównym <script> wołają go). -->
+  <script type="module" src="/static/policy-editor/index.js"></script>
 </body>
 </html>

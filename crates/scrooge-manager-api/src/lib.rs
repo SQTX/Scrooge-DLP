@@ -82,6 +82,10 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(dashboard))
         .route("/dashboard", get(dashboard))
+        .route(
+            "/static/policy-editor/*path",
+            get(handlers::policy_editor::asset),
+        )
         .route("/health", get(handlers::health::health))
         .nest("/api/v1", v1)
         .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", ApiDoc::openapi()))
