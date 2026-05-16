@@ -57,10 +57,50 @@ export function formToYaml(formState, _ghostYaml = null) {
     if (r.message) lines.push(`      message: ${yamlString(r.message)}`);
     if (r.notify_user) lines.push('      notify_user: true');
     if (r.forward_to_siem) lines.push('      forward_to_siem: true');
-    // TODO(2F.5-7): sources / destinations / conditions
+
+    // Sources / destinations żyją na poziomie formState, nie rule —
+    // ale w YAMLu wjeżdżają wewnątrz rules.outbound[0]. Emit'ujemy tutaj.
+    emitSources(lines, formState.sources ?? []);
+    emitDestinations(lines, formState.destinations ?? []);
+
+    // TODO(2F.7): conditions
   }
 
   return lines.join('\n') + '\n';
+}
+
+function emitSources(lines, sources) {
+  if (!sources.length) return;
+  lines.push('      sources:');
+  for (const src of sources) emitSourceLike(lines, src, 8);
+}
+
+function emitDestinations(lines, dests) {
+  if (!dests.length) return;
+  lines.push('      destinations:');
+  for (const d of dests) emitSourceLike(lines, d, 8);
+}
+
+/**
+ * Source i Destination mają identyczny YAML shape: `- type: X` plus pola.
+ * Wspólny helper. `indent` = liczba spacji przed `-`.
+ */
+function emitSourceLike(lines, item, indent) {
+  const pad = ' '.repeat(indent);
+  const pad2 = ' '.repeat(indent + 2);
+  lines.push(`${pad}- type: ${item.type}`);
+  for (const [k, v] of Object.entries(item)) {
+    if (k === 'type') continue;
+    if (Array.isArray(v)) {
+      if (v.length === 0) continue; // pomiń puste tablice — backend default to []
+      const items = v.map(yamlString).join(', ');
+      lines.push(`${pad2}${k}: [${items}]`);
+    } else if (typeof v === 'boolean') {
+      lines.push(`${pad2}${k}: ${v}`);
+    } else if (v !== undefined && v !== null && v !== '') {
+      lines.push(`${pad2}${k}: ${yamlString(String(v))}`);
+    }
+  }
 }
 
 /**

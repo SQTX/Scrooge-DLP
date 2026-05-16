@@ -10,6 +10,8 @@
 import { formToYaml } from '../codec/formToYaml.js';
 import { MetadataSection } from '../sections/MetadataSection.js';
 import { RuleSection } from '../sections/RuleSection.js';
+import { SourceListEditor } from '../sections/SourceListEditor.js';
+import { DestinationListEditor } from '../sections/DestinationListEditor.js';
 
 export class FormMode {
   /**
@@ -59,10 +61,30 @@ export class FormMode {
     });
     this.sections.rule.render();
 
-    // Placeholder dla kolejnych sekcji (2F.5-7).
+    // Sources.
+    const sourcesMount = document.createElement('div');
+    this.leftPane.appendChild(sourcesMount);
+    this.sections.sources = new SourceListEditor({
+      mount: sourcesMount,
+      initialState: this.formState.sources ?? [],
+      onChange: (s) => this._sectionChanged('sources', s),
+    });
+    this.sections.sources.render();
+
+    // Destinations.
+    const destsMount = document.createElement('div');
+    this.leftPane.appendChild(destsMount);
+    this.sections.destinations = new DestinationListEditor({
+      mount: destsMount,
+      initialState: this.formState.destinations ?? [],
+      onChange: (d) => this._sectionChanged('destinations', d),
+    });
+    this.sections.destinations.render();
+
+    // Placeholder dla Conditions (2F.7).
     const todo = document.createElement('div');
     todo.className = 'p-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-500';
-    todo.textContent = 'Sources, Destinations, Conditions — wjadą w kolejnych commitach Sub-fazy 2F.';
+    todo.textContent = 'Conditions (file_size, extensions, regex) — wjadą w kolejnym commit\'cie Sub-fazy 2F.';
     this.leftPane.appendChild(todo);
 
     grid.appendChild(this.leftPane);

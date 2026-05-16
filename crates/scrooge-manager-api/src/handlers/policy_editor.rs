@@ -35,6 +35,10 @@ const METADATA_SECTION_JS: &str =
     include_str!("../../static/policy-editor/sections/MetadataSection.js");
 const RULE_SECTION_JS: &str =
     include_str!("../../static/policy-editor/sections/RuleSection.js");
+const SOURCE_LIST_EDITOR_JS: &str =
+    include_str!("../../static/policy-editor/sections/SourceListEditor.js");
+const DESTINATION_LIST_EDITOR_JS: &str =
+    include_str!("../../static/policy-editor/sections/DestinationListEditor.js");
 
 // API wrappers.
 const API_POLICIES_JS: &str = include_str!("../../static/policy-editor/api/policies.js");
@@ -56,6 +60,8 @@ pub async fn asset(Path(path): Path<String>) -> Response {
         "codec/formToYaml.js" => FORM_TO_YAML_JS,
         "sections/MetadataSection.js" => METADATA_SECTION_JS,
         "sections/RuleSection.js" => RULE_SECTION_JS,
+        "sections/SourceListEditor.js" => SOURCE_LIST_EDITOR_JS,
+        "sections/DestinationListEditor.js" => DESTINATION_LIST_EDITOR_JS,
         "api/policies.js" => API_POLICIES_JS,
         "api/auth.js" => API_AUTH_JS,
         _ => return (StatusCode::NOT_FOUND, "not found").into_response(),
