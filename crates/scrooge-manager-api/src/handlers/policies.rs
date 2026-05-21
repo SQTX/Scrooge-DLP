@@ -315,9 +315,24 @@ pub async fn create(
         "policy created"
     );
 
+    // Phase 3.x — live broadcast do connected agents (fire-and-forget).
+    notify_policy_changed(&state, Some(policy.metadata.name.clone()));
+
     fetch_full(state.pool(), &policy.metadata.name)
         .await
         .map(|dto| (StatusCode::CREATED, Json(dto)))
+}
+
+/// Helper — wysyła `PolicyPushRequest` do manager-bin bridge'a jeśli wpięty.
+/// `try_send` — drop fire-and-forget gdy kanał pełny (lepiej zignorować
+/// niż blokować response'u — admin może retry'ować).
+fn notify_policy_changed(state: &AppState, policy_name: Option<String>) {
+    use crate::state::PolicyPushRequest;
+    if let Some(tx) = state.policy_push_tx() {
+        if let Err(e) = tx.try_send(PolicyPushRequest { policy_name }) {
+            tracing::warn!(error = %e, "policy push notify failed (queue full?)");
+        }
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -405,6 +420,8 @@ pub async fn update(
         "policy updated"
     );
 
+    notify_policy_changed(&state, Some(name.clone()));
+
     fetch_full(state.pool(), &name).await.map(Json)
 }
 
@@ -439,6 +456,10 @@ pub async fn delete_(
         return Err(ApiError::NotFound);
     }
     tracing::info!(user = %claims.username, policy = %name, "policy deleted");
+    // Po delete agent powinien usunąć msgpack lokalnie — Phase 3.x flow
+    // do dopracowania (obecnie agent zostawia stary plik). Notify żeby
+    // przyszły delete-aware kod miał trigger.
+    notify_policy_changed(&state, Some(name.clone()));
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -564,6 +585,8 @@ pub async fn rollback(
         new_version,
         "policy rolled back"
     );
+
+    notify_policy_changed(&state, Some(name.clone()));
 
     fetch_full(state.pool(), &name).await.map(Json)
 }

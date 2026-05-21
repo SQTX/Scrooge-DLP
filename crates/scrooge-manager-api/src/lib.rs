@@ -38,7 +38,7 @@ use utoipa::{
 };
 use utoipa_swagger_ui::SwaggerUi;
 
-pub use state::{AgentCommandRequest, AppState};
+pub use state::{AgentCommandRequest, AppState, PolicyPushRequest};
 
 /// Embedded dashboard HTML — minimalistyczny SPA (login + agents list).
 /// `include_str!` wpisuje treść pliku w binarkę przy compile time, więc

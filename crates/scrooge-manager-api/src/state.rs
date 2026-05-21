@@ -31,6 +31,11 @@ struct Inner {
     /// Stream do connected agentów. `None` = manager-bin nie wystawia
     /// bridge'a (np. testy unit'owe AppState).
     command_tx: Option<mpsc::Sender<AgentCommandRequest>>,
+    /// Phase 3.x — bridge dla live policy broadcast. REST handler
+    /// `policies::create/update/delete/rollback` emit'uje tu nazwę policy
+    /// po zmianie. Manager-bin worker loaduje delta i pushuje do wszystkich
+    /// connected agents (matching targets server-side).
+    policy_push_tx: Option<mpsc::Sender<PolicyPushRequest>>,
 }
 
 /// Żądanie wysłania komendy z REST do agenta (manager-bin bridge).
@@ -42,6 +47,15 @@ pub struct AgentCommandRequest {
     pub payload: Vec<u8>,
     /// Wygenerowany przez REST handler — manager-bin wpisuje w Command.command_id.
     pub command_id: String,
+}
+
+/// Żądanie live broadcast'u policy do wszystkich connected agents
+/// (Phase 3.x — admin tworzy/zmienia policy w dashboard → leci natychmiast).
+#[derive(Debug, Clone)]
+pub struct PolicyPushRequest {
+    /// Nazwa policy która się zmieniła. `None` = broadcast wszystkich
+    /// pending (rzadkie — np. po rollback wielu naraz).
+    pub policy_name: Option<String>,
 }
 
 /// Pola configu managera potrzebne przez install API (Sub-faza 1B).
@@ -70,6 +84,7 @@ impl AppState {
         dashboard: DashboardConfig,
         server_cfg: &ManagerServerConfig,
         command_tx: Option<mpsc::Sender<AgentCommandRequest>>,
+        policy_push_tx: Option<mpsc::Sender<PolicyPushRequest>>,
     ) -> Self {
         let secret = auth_cfg.jwt_secret.as_bytes();
         let auth = AuthMaterial {
@@ -91,6 +106,7 @@ impl AppState {
                 dashboard,
                 install,
                 command_tx,
+                policy_push_tx,
             }),
         }
     }
@@ -100,6 +116,14 @@ impl AppState {
     #[must_use]
     pub fn command_tx(&self) -> Option<&mpsc::Sender<AgentCommandRequest>> {
         self.inner.command_tx.as_ref()
+    }
+
+    /// Bridge do manager-bin dla live policy broadcast. `None` gdy
+    /// AppState bez bridge'a. REST policy handlers wywołują `try_send`
+    /// żeby nie blokować response'u — drop fire-and-forget gdy zatkany.
+    #[must_use]
+    pub fn policy_push_tx(&self) -> Option<&mpsc::Sender<PolicyPushRequest>> {
+        self.inner.policy_push_tx.as_ref()
     }
 
     #[must_use]

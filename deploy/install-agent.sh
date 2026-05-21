@@ -61,6 +61,16 @@ log "Manager:    $MANAGER"
 log "Token:      ${TOKEN:0:8}…"
 log "Install ref: $INSTALL_REF"
 
+# ── Disk space check (cargo build ~3GB target/ + sqlx) ────────────────────
+# Free space wymagane: ~5GB w /var (sqlx vendor cache + /opt build).
+AVAIL_KB=$(df --output=avail / 2>/dev/null | tail -1 | tr -d ' ' || echo "0")
+AVAIL_GB=$((AVAIL_KB / 1024 / 1024))
+if [[ "$AVAIL_GB" -lt 5 ]]; then
+  warn "free disk: ${AVAIL_GB}GB — build wymaga ~5GB. Cleanup zalecany:"
+  warn "  sudo apt-get clean && sudo journalctl --vacuum-size=200M"
+  warn "Kontynuuję mimo to (może się udać przy <5GB)."
+fi
+
 # ── Detect headless (brak GUI/DISPLAY) ────────────────────────────────────
 # Phase 3 clipboard DLP wymaga X11/Wayland w sesji usera. System service
 # (root, brak DISPLAY) NIE zobaczy schowka — enrollment + heartbeat
@@ -99,12 +109,20 @@ fi
 
 # ── Rustup ────────────────────────────────────────────────────────────────
 if ! command -v cargo >/dev/null 2>&1; then
-  log "installing rustup (stable)"
-  # Rustup install jako root → cargo w /root/.cargo. Wynikowa binarka
-  # i tak ląduje w /usr/local/bin po install -m 755, więc OK.
+  log "installing rustup (stable, system-wide /usr/local/cargo)"
+  # System-wide install — root's PATH widzi cargo, dev user też (przez
+  # /usr/local/bin/cargo symlink). Eliminuje "sudo cargo command not found".
+  export CARGO_HOME=/usr/local/cargo
+  export RUSTUP_HOME=/usr/local/rustup
   curl -fsSL --proto '=https' --tlsv1.2 https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path
-  export PATH="$HOME/.cargo/bin:$PATH"
+  # Symlinki dla world (cargo / rustc / rustup w /usr/local/bin).
+  for bin in cargo rustc rustup; do
+    if [[ -x "$CARGO_HOME/bin/$bin" ]] && [[ ! -e "/usr/local/bin/$bin" ]]; then
+      ln -sf "$CARGO_HOME/bin/$bin" "/usr/local/bin/$bin"
+    fi
+  done
+  export PATH="$CARGO_HOME/bin:$PATH"
 fi
 
 # ── Pobierz CA managera (bootstrap TLS trust) ─────────────────────────────

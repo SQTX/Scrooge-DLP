@@ -120,6 +120,69 @@ impl AgentRegistry {
     async fn get(&self, agent_id: Uuid) -> Option<AgentTx> {
         self.inner.read().await.get(&agent_id).cloned()
     }
+
+    /// Snapshot UUIDs wszystkich obecnie connected agents — dla policy
+    /// broadcast (Phase 3.x).
+    async fn all_agent_ids(&self) -> Vec<Uuid> {
+        self.inner.read().await.keys().copied().collect()
+    }
+}
+
+/// Phase 3.x — bridge dla live policy broadcast. Po `policies::create/
+/// update/delete/rollback` REST handler emit'uje `PolicyPushRequest`.
+/// Bridge iteruje connected agents (`registry`), dla każdego loaduje
+/// pending policies (delta vs ostatnie acked) i pushuje przez gRPC.
+///
+/// Brak DB-level filtering po targets — `load_pending_policies` już
+/// to robi (matchuje os/tags/groups/agent_ids per `policy_assignments`
+/// table). Bridge nie rozwiązuje target matching, polega na PG view.
+pub(crate) async fn run_policy_push_bridge(
+    registry: AgentRegistry,
+    pool: PgPool,
+    mut rx: mpsc::Receiver<scrooge_manager_api::PolicyPushRequest>,
+) {
+    while let Some(req) = rx.recv().await {
+        let agent_ids = registry.all_agent_ids().await;
+        tracing::info!(
+            policy = ?req.policy_name,
+            connected_agents = agent_ids.len(),
+            "policy push broadcast"
+        );
+        for agent_id in agent_ids {
+            let Some(tx) = registry.get(agent_id).await else { continue };
+            match load_pending_policies(&pool, agent_id).await {
+                Ok(pending) if pending.is_empty() => {
+                    tracing::debug!(%agent_id, "broadcast: no pending");
+                },
+                Ok(pending) => {
+                    for p in &pending {
+                        let version_i32 = i32::try_from(p.version).unwrap_or(0);
+                        if let Err(e) = mark_assigned(
+                            &pool,
+                            agent_id,
+                            &p.policy_id,
+                            version_i32,
+                        )
+                        .await
+                        {
+                            tracing::warn!(error = %e, policy = %p.policy_id, "mark_assigned (broadcast)");
+                        }
+                    }
+                    let update = ManagerMessage {
+                        payload: Some(manager_message::Payload::Policy(PolicyUpdate {
+                            policies: pending,
+                            full_replace: false,
+                            remove_policy_ids: vec![],
+                        })),
+                    };
+                    if tx.send(Ok(update)).await.is_err() {
+                        tracing::debug!(%agent_id, "broadcast: channel closed");
+                    }
+                },
+                Err(e) => tracing::warn!(%agent_id, error = %e, "load_pending_policies (broadcast)"),
+            }
+        }
+    }
 }
 
 /// Bridge task — odbiera `AgentCommandRequest` z REST handler'a i wysyła

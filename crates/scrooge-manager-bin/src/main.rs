@@ -50,6 +50,7 @@ struct Args {
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     telemetry::init(args.log_format);
@@ -112,9 +113,15 @@ async fn main() -> anyhow::Result<()> {
     // bridge z REST do gRPC. REST handler `POST /agents/{id}/command`
     // wpycha żądanie do `cmd_rx`, background task lookuje agenta w registry
     // i wysyła `ManagerMessage::Command`.
+    //
+    // Phase 3.x: dodatkowy bridge dla live policy broadcast — REST
+    // `policies::create/update/delete/rollback` notify'uje `policy_push_rx`,
+    // bridge re-pushuje delta do każdego connected agenta.
     let agent_registry = grpc::AgentRegistry::new();
     let (cmd_tx, cmd_rx) =
         tokio::sync::mpsc::channel::<scrooge_manager_api::AgentCommandRequest>(64);
+    let (policy_push_tx, policy_push_rx) =
+        tokio::sync::mpsc::channel::<scrooge_manager_api::PolicyPushRequest>(64);
 
     // Komponenty serwerów.
     let api_state = AppState::new(
@@ -123,6 +130,7 @@ async fn main() -> anyhow::Result<()> {
         config.dashboard.clone(),
         &config.server,
         Some(cmd_tx),
+        Some(policy_push_tx),
     );
     let tls = grpc::tls_config(&config.server).context("building TLS config")?;
     let grpc_service = grpc::AgentServiceImpl::new(pool.clone(), ca, agent_registry.clone());
@@ -131,8 +139,17 @@ async fn main() -> anyhow::Result<()> {
         .context("applying TLS config")?
         .add_service(AgentServiceServer::new(grpc_service));
 
-    // Bridge task: REST → gRPC push.
-    tokio::spawn(grpc::run_command_bridge(agent_registry, cmd_rx));
+    // Bridge task: REST → gRPC push (commands).
+    tokio::spawn(grpc::run_command_bridge(
+        agent_registry.clone(),
+        cmd_rx,
+    ));
+    // Bridge task: REST → gRPC push (live policy broadcast, Phase 3.x).
+    tokio::spawn(grpc::run_policy_push_bridge(
+        agent_registry,
+        pool.clone(),
+        policy_push_rx,
+    ));
 
     // Wspólny kanał shutdown — SIGINT/SIGTERM triggeruje oba serwery.
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
