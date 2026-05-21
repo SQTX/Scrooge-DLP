@@ -75,6 +75,10 @@
                   class="tab-btn py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium text-sm">
             Policies
           </button>
+          <button id="tab-events-btn" data-tab="events"
+                  class="tab-btn py-3 border-b-2 border-transparent text-gray-500 hover:text-gray-700 font-medium text-sm">
+            Events
+          </button>
         </div>
       </div>
     </nav>
@@ -179,6 +183,75 @@
             <div class="text-4xl mb-2 text-gray-300">⊘</div>
             <div>No policies defined yet.</div>
             <div class="text-xs mt-2 text-gray-400">Click <strong>+ New policy</strong> to create your first DLP policy.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══ Events tab (Phase 3) ═════════════════════════════════════════ -->
+      <section id="events-section" class="hidden">
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <h2 class="text-2xl font-semibold">Events</h2>
+            <p class="text-sm text-gray-500 mt-1">
+              <span id="event-count">0</span> shown
+              <span class="text-gray-300 mx-2">·</span>
+              last updated <span id="event-last-refresh" class="text-gray-400">—</span>
+            </p>
+          </div>
+          <button id="event-refresh-btn"
+                  class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded transition">
+            Refresh
+          </button>
+        </div>
+
+        <!-- Filtry -->
+        <div class="bg-white border border-gray-200 rounded-lg p-4 mb-4 flex flex-wrap gap-3 items-end">
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Severity</label>
+            <select id="event-filter-severity"
+                    class="px-2 py-1 border border-gray-300 rounded text-sm">
+              <option value="">all</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+              <option value="critical">critical</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Event type</label>
+            <input id="event-filter-type" type="text" placeholder="np. CLIPBOARD_COPY"
+                   class="px-2 py-1 border border-gray-300 rounded text-sm w-48">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Agent ID</label>
+            <input id="event-filter-agent" type="text" placeholder="UUID"
+                   class="px-2 py-1 border border-gray-300 rounded text-sm w-72 font-mono">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Limit</label>
+            <input id="event-filter-limit" type="number" value="100" min="1" max="1000"
+                   class="px-2 py-1 border border-gray-300 rounded text-sm w-20">
+          </div>
+        </div>
+
+        <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Severity</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Classifier</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Preview</th>
+              </tr>
+            </thead>
+            <tbody id="events-tbody" class="bg-white divide-y divide-gray-200"></tbody>
+          </table>
+          <div id="events-empty-state" class="hidden text-center py-16 text-gray-500">
+            <div class="text-4xl mb-2 text-gray-300">∅</div>
+            <div>Brak eventów w bieżącym filtrze.</div>
+            <div class="text-xs mt-2 text-gray-400">Skopiuj coś wrażliwego (np. numer karty) na agencie żeby zobaczyć detection.</div>
           </div>
         </div>
       </section>
@@ -859,6 +932,7 @@
       currentTab = tab;
       $('agents-section').classList.toggle('hidden', tab !== 'agents');
       $('policies-section').classList.toggle('hidden', tab !== 'policies');
+      $('events-section').classList.toggle('hidden', tab !== 'events');
       // Update tab button styling
       for (const btn of document.querySelectorAll('.tab-btn')) {
         const active = btn.dataset.tab === tab;
@@ -868,10 +942,12 @@
         btn.classList.toggle('text-gray-500', !active);
       }
       if (tab === 'policies') loadPolicies();
+      if (tab === 'events') loadEvents();
     }
 
     $('tab-agents-btn').addEventListener('click', () => switchTab('agents'));
     $('tab-policies-btn').addEventListener('click', () => switchTab('policies'));
+    $('tab-events-btn').addEventListener('click', () => switchTab('events'));
 
     async function authHeaders() {
       const token = localStorage.getItem(TOKEN_KEY);
@@ -1051,6 +1127,105 @@
       } catch (err) {
         toast('Rollback error: ' + err.message);
       }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ── Events tab (Phase 3) ────────────────────────────────────────
+    // ═══════════════════════════════════════════════════════════════
+
+    async function loadEvents() {
+      const params = new URLSearchParams();
+      const sev = $('event-filter-severity').value.trim();
+      const type_ = $('event-filter-type').value.trim();
+      const agent = $('event-filter-agent').value.trim();
+      const limit = $('event-filter-limit').value.trim() || '100';
+      if (sev) params.set('severity', sev);
+      if (type_) params.set('event_type', type_);
+      if (agent) params.set('agent_id', agent);
+      params.set('limit', limit);
+      try {
+        const r = await fetch('/api/v1/events?' + params.toString(),
+          { headers: await authHeaders() });
+        if (r.status === 401) { toast('Session expired'); doLogout(); return; }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        renderEvents(await r.json());
+      } catch (err) {
+        console.error('loadEvents:', err);
+        toast('Error: ' + err.message);
+      }
+    }
+
+    function renderEvents(events) {
+      const tbody = $('events-tbody');
+      const empty = $('events-empty-state');
+      $('event-count').textContent = events.length;
+      $('event-last-refresh').textContent = new Date().toLocaleTimeString();
+
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      if (events.length === 0) { empty.classList.remove('hidden'); return; }
+      empty.classList.add('hidden');
+
+      const sevColor = {
+        low: 'bg-gray-100 text-gray-700',
+        medium: 'bg-yellow-100 text-yellow-800',
+        high: 'bg-orange-100 text-orange-800',
+        critical: 'bg-red-100 text-red-800',
+      };
+
+      for (const e of events) {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+
+        const tdTime = document.createElement('td');
+        tdTime.className = 'px-4 py-3 whitespace-nowrap text-xs text-gray-700';
+        tdTime.textContent = new Date(e.timestamp).toLocaleString();
+        tr.appendChild(tdTime);
+
+        const tdAgent = document.createElement('td');
+        tdAgent.className = 'px-4 py-3 whitespace-nowrap text-xs font-mono text-gray-700';
+        tdAgent.textContent = e.agent_id.slice(0, 8) + '…';
+        tdAgent.title = e.agent_id;
+        tr.appendChild(tdAgent);
+
+        const tdType = document.createElement('td');
+        tdType.className = 'px-4 py-3 whitespace-nowrap text-xs font-mono';
+        tdType.textContent = e.event_type;
+        tr.appendChild(tdType);
+
+        const tdSev = document.createElement('td');
+        tdSev.className = 'px-4 py-3 whitespace-nowrap';
+        const sevSpan = document.createElement('span');
+        sevSpan.className = 'px-2 py-0.5 rounded text-xs font-medium '
+          + (sevColor[e.severity] || 'bg-gray-100 text-gray-700');
+        sevSpan.textContent = e.severity;
+        tdSev.appendChild(sevSpan);
+        tr.appendChild(tdSev);
+
+        // Classifier z details.matches[0] (gdy istnieje).
+        const tdCls = document.createElement('td');
+        tdCls.className = 'px-4 py-3 whitespace-nowrap text-xs text-gray-700';
+        const m = (e.details && Array.isArray(e.details.matches) && e.details.matches[0]) || null;
+        tdCls.textContent = m ? m.classifier_id : '—';
+        tr.appendChild(tdCls);
+
+        // Preview — z details.clipboard.content_preview albo m.sample_excerpt.
+        const tdPrev = document.createElement('td');
+        tdPrev.className = 'px-4 py-3 text-xs font-mono text-gray-600';
+        const preview =
+          (e.details && e.details.clipboard && e.details.clipboard.content_preview)
+          || (m && m.sample_excerpt) || '';
+        tdPrev.textContent = preview;
+        tr.appendChild(tdPrev);
+
+        tbody.appendChild(tr);
+      }
+    }
+
+    $('event-refresh-btn').addEventListener('click', () => { loadEvents(); toast('Refreshed'); });
+    // Auto-reload przy zmianie filtru.
+    for (const id of ['event-filter-severity', 'event-filter-type',
+                       'event-filter-agent', 'event-filter-limit']) {
+      $(id).addEventListener('change', () => loadEvents());
     }
 
     // ═══════════════════════════════════════════════════════════════
