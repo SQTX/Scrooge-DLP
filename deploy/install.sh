@@ -107,6 +107,11 @@ ok "na $INSTALL_REF ($(git rev-parse --short HEAD))"
 # 3. Deleguj resztę do quickstart.sh
 # ──────────────────────────────────────────────────────────────────────────
 echo ""
-say "uruchamiam deploy/quickstart.sh"
+# Propaguj INSTALL_REF jako default dla AGENT_RELEASE_TAG. Bez tego
+# quickstart hardcoduje stary tag (v0.1.0-rc7) → dashboard one-liner
+# wskazuje na branch który nie ma najnowszego `deploy/install-agent.sh`
+# (404). Override przez explicit AGENT_RELEASE_TAG env zachowany.
+export AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-$INSTALL_REF}"
+say "uruchamiam deploy/quickstart.sh (agent_release_tag=$AGENT_RELEASE_TAG)"
 echo ""
 exec ./deploy/quickstart.sh "$@"
