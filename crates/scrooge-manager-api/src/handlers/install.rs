@@ -252,6 +252,12 @@ pub async fn create(
 #[derive(Debug, Deserialize)]
 pub struct InstallScriptQuery {
     pub token: String,
+    /// Phase 3+ — build-from-source mode. Gdy `Some(branch)`, script
+    /// klonuje repo @ branch i odpala `cargo build --release` zamiast
+    /// pobierać prebuilt `.deb`. Wymaga sieci + deps systemowych.
+    /// Wartość = nazwa branch/tag/commit w `SQTX/Scrooge-DLP`.
+    #[serde(default)]
+    pub r#ref: Option<String>,
 }
 
 /// `GET /api/v1/install.sh?token=XYZ` — server-rendered bash installer (Linux).
@@ -272,7 +278,7 @@ pub async fn script(
     State(state): State<AppState>,
     Query(q): Query<InstallScriptQuery>,
 ) -> ApiResult<Response> {
-    render_for(&state, TargetOs::Linux, &q.token).await
+    render_for(&state, TargetOs::Linux, &q.token, q.r#ref.as_deref()).await
 }
 
 /// `GET /api/v1/install-macos.sh?token=XYZ` — bash installer dla macOS
@@ -294,7 +300,7 @@ pub async fn script_macos(
     State(state): State<AppState>,
     Query(q): Query<InstallScriptQuery>,
 ) -> ApiResult<Response> {
-    render_for(&state, TargetOs::MacOs, &q.token).await
+    render_for(&state, TargetOs::MacOs, &q.token, q.r#ref.as_deref()).await
 }
 
 /// `GET /api/v1/install.ps1?token=XYZ` — PowerShell installer dla Windows
@@ -316,14 +322,19 @@ pub async fn script_windows(
     State(state): State<AppState>,
     Query(q): Query<InstallScriptQuery>,
 ) -> ApiResult<Response> {
-    render_for(&state, TargetOs::Windows, &q.token).await
+    render_for(&state, TargetOs::Windows, &q.token, q.r#ref.as_deref()).await
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Wspólny renderer
 // ────────────────────────────────────────────────────────────────────────────
 
-async fn render_for(state: &AppState, os: TargetOs, token: &str) -> ApiResult<Response> {
+async fn render_for(
+    state: &AppState,
+    os: TargetOs,
+    token: &str,
+    install_ref: Option<&str>,
+) -> ApiResult<Response> {
     let ctx = ScriptContext::from_install_config(state.install_config())?;
     validate_token(state, token).await?;
 
@@ -334,7 +345,13 @@ async fn render_for(state: &AppState, os: TargetOs, token: &str) -> ApiResult<Re
         ))
     })?;
 
-    let body = render_install_script(os.template(), &ctx, token, ca_pem.trim_end());
+    let body = render_install_script(
+        os.template(),
+        &ctx,
+        token,
+        ca_pem.trim_end(),
+        install_ref.unwrap_or(""),
+    );
 
     tracing::info!(
         target_os = os.label(),
@@ -410,7 +427,13 @@ impl ScriptContext {
 }
 
 /// Pure-function renderowanie. Wydzielone do unit testu — nie dotyka I/O.
-fn render_install_script(template: &str, ctx: &ScriptContext, token: &str, ca_pem: &str) -> String {
+fn render_install_script(
+    template: &str,
+    ctx: &ScriptContext,
+    token: &str,
+    ca_pem: &str,
+    install_ref: &str,
+) -> String {
     template
         .replace("{{MANAGER_ENDPOINT}}", &ctx.manager_endpoint)
         .replace("{{INSTALL_BASE_URL}}", &ctx.install_base_url)
@@ -418,6 +441,7 @@ fn render_install_script(template: &str, ctx: &ScriptContext, token: &str, ca_pe
         .replace("{{RELEASE_TAG}}", &ctx.release_tag)
         .replace("{{PACKAGE_VERSION}}", PACKAGE_VERSION)
         .replace("{{RELEASES_BASE}}", RELEASES_BASE_URL)
+        .replace("{{INSTALL_REF}}", install_ref)
         .replace("{{CA_PEM}}", ca_pem)
 }
 
@@ -451,6 +475,7 @@ mod tests {
             &dummy_ctx(),
             "TEST-TOKEN-1234",
             "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----",
+            "",
         );
         assert_no_placeholders(&out, "linux");
         assert!(out.contains("mgr.example.com:5443"));
@@ -460,12 +485,28 @@ mod tests {
     }
 
     #[test]
+    fn linux_template_with_install_ref_includes_build_from_source() {
+        let out = render_install_script(
+            LINUX_TEMPLATE,
+            &dummy_ctx(),
+            "REF-TOKEN-1234",
+            "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----",
+            "claude/wizardly-fermi-ae7494",
+        );
+        assert_no_placeholders(&out, "linux+ref");
+        assert!(out.contains("claude/wizardly-fermi-ae7494"));
+        assert!(out.contains("build-from-source"));
+        assert!(out.contains("cargo build"));
+    }
+
+    #[test]
     fn macos_template_renders_all_placeholders() {
         let out = render_install_script(
             MACOS_TEMPLATE,
             &dummy_ctx(),
             "MAC-TOKEN-5678",
             "-----BEGIN CERTIFICATE-----\nmac-fake\n-----END CERTIFICATE-----",
+            "",
         );
         assert_no_placeholders(&out, "macos");
         assert!(out.contains("mgr.example.com:5443"));
@@ -481,6 +522,7 @@ mod tests {
             &dummy_ctx(),
             "WIN-TOKEN-9999",
             "-----BEGIN CERTIFICATE-----\nwin-fake\n-----END CERTIFICATE-----",
+            "",
         );
         assert_no_placeholders(&out, "windows");
         assert!(out.contains("mgr.example.com:5443"));
