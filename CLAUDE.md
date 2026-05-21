@@ -39,7 +39,7 @@ Rule, Sources (6 typów), Destinations (7 typów), Conditions (collapsible).
 ModeSwitch w nagłówku, yamlToForm parsuje przez backend Validate (smart
 default: Form jeśli form-friendly, YAML inaczej), ConfirmDialog przy YAML→Form
 z unsupported features, klikalne `?` tooltipy z opisem każdego pola/akcji.
-Tag `v0.1.1` planowany. Polityki nadal **NIE enforce'owane** (to Phase 3).
+Tag `v0.2.0` planowany. Polityki nadal **NIE enforce'owane** (to Phase 3).
 
 ⏳ **Faza 3: Detekcja DLP** — `mod_clipscreen` (clipboard monitor),
 `mod_classifier` (Luhn/PESEL/IBAN/NIP), agent zaczyna realnie patrzeć
@@ -62,6 +62,16 @@ na wrażliwe dane i blokować/logować.
   na milestone'ach.
 - **Conventional Commits** (`feat(scope):`, `fix(scope):`, `docs:` itp).
   Autor: SQTX `<sssqtx@gmail.com>`.
+- **Versioning — minor = phase, patch = fix w fazie:**
+  - `v0.1.x` Phase 1 (Wazuh-flow distribution), tagi: `v0.1.0-rc7` etc.
+  - `v0.2.x` Phase 2 (DLP policies YAML + dashboard editor)
+  - `v0.3.x` Phase 3 (clipboard + classifier enforce)
+  - `v0.4.x` Phase 4 (event pipeline + offline buffering)
+  - `v0.5.x` Phase 5 (backup & resilience)
+  - `v0.6.x` Phase 6 (auto-update + image registry)
+  - `v1.0.0` production ready (po wszystkich phases)
+  - Sub-fazy (np. 2F, 2G) → patch bump (`v0.2.1`, `v0.2.2`) jeśli dodawane
+    po release danej fazy. Jeśli idą razem z major fazą — łączymy w `v0.X.0`.
 - **Lints:** `cargo fmt --all -- --check`, `cargo clippy --workspace
   --all-targets -- -D warnings`, `cargo test --workspace`. Wszystko zielone
   przed commitem.
@@ -111,7 +121,7 @@ na wrażliwe dane i blokować/logować.
 ## Aktualnie
 
 **Phase 2 + 2F zamknięte i zweryfikowane E2E na żywych VM-kach.**
-PR `dev → main` + tag `v0.1.1` (bump minor — pierwsza realna funkcjonalność
+PR `dev → main` + tag `v0.2.0` (bump minor — pierwsza realna funkcjonalność
 po MVP).
 
 **Następnie:** Phase 3 (detekcja DLP — clipboard monitor + classifier
