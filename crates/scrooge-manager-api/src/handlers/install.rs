@@ -236,11 +236,18 @@ pub async fn create(
 
     // One-liner używa github raw + env vars — nie wymaga public_rest_base_url
     // (tylko public_grpc_endpoint wstrzykiwane do MANAGER=).
+    // INSTALL_REF czytamy z `agent_release_tag` w manager.yaml — pre-release
+    // testy ustawiają tam np. "claude/<branch>", produkcja "vX.Y.Z".
+    let install_ref = state
+        .install_config()
+        .agent_release_tag
+        .clone()
+        .unwrap_or_default();
     let install_command = state
         .install_config()
         .public_grpc_endpoint
         .as_ref()
-        .map(|mgr| os.one_liner(mgr, &raw, ""));
+        .map(|mgr| os.one_liner(mgr, &raw, &install_ref));
 
     tracing::info!(
         user = %claims.username,
