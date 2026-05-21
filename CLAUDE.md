@@ -18,7 +18,7 @@ danych, blokowanie exfiltracji). Trzy komponenty:
 Stack: **Rust 2021** (MSRV 1.75), Tokio, **tonic** (gRPC), **axum** (REST),
 **sqlx** (PostgreSQL), **rustls** (TLS). Multi-crate workspace w `crates/`.
 
-## Status (2026-05-15)
+## Status (2026-05-21)
 
 ✅ **Faza 1: Wazuh-flow Distribution** — manager+agent+dashboard od strzała przez
 `curl install.sh | bash`. mTLS gRPC + HTTPS REST. Linux production-tested,
@@ -29,12 +29,31 @@ Tag `v0.1.0-rc7` w GitHub Releases.
 compile + SHA-256), REST CRUD `/api/v1/policies`, push przez gRPC Stream z
 delta-push + `PolicyAck`, dashboard tabela + YAML editor + history +
 rollback, `POST /agents/{id}/command` (Send command z UI), agent_version
-w heartbeat + outdated widget. Polityki są zarządzane ale **NIE
-enforce'owane jeszcze** (to Phase 3).
+w heartbeat + outdated widget. **E2E zweryfikowane na żywych VM-kach.**
+
+✅ **Faza 2F: Policy editor dual-mode (Form + YAML)** — wydzielony JS module
+`static/policy-editor/` (ES Modules, klasy ES6, zero build step). Form mode
+ze split view (pola po lewej, live YAML preview po prawej, debounce 150ms).
+Sekcje: Metadata, Targets (segmented all/tags/groups/agent_ids + OS filter),
+Rule, Sources (6 typów), Destinations (7 typów), Conditions (collapsible).
+ModeSwitch w nagłówku, yamlToForm parsuje przez backend Validate (smart
+default: Form jeśli form-friendly, YAML inaczej), ConfirmDialog przy YAML→Form
+z unsupported features, klikalne `?` tooltipy z opisem każdego pola/akcji.
+Tag `v0.1.1` planowany. Polityki nadal **NIE enforce'owane** (to Phase 3).
 
 ⏳ **Faza 3: Detekcja DLP** — `mod_clipscreen` (clipboard monitor),
 `mod_classifier` (Luhn/PESEL/IBAN/NIP), agent zaczyna realnie patrzeć
 na wrażliwe dane i blokować/logować.
+
+🔜 **Backlog post-Phase 2F:**
+- **2G: Groups + per-agent tags GUI** — Agents tab edit tagów + `targets`
+  preview "matches N agents". Wymaga PG schema update + `PUT /agents/{id}/tags`.
+- **Phase 4: Event pipeline + offline buffering** — sqlite WAL na agencie,
+  batch upload nieparsowanych eventów po reconnect (manager down = zero loss).
+- **Phase 5: Backup & resilience** — auto pg_dump cron, restore z dashboardu,
+  external PG opcja.
+- **Phase 6: Auto-update flow** — image registry (GHCR), dashboard "Check
+  for updates", agent self-update przez Send command.
 
 ## Workflow
 
@@ -91,12 +110,9 @@ na wrażliwe dane i blokować/logować.
 
 ## Aktualnie
 
-**Phase 2 zamknięta**, czeka na PR `dev → main` po manualnym E2E na żywych VM-kach
-(Manager z Docker + agent enrolled + create policy w dashboard + verify
-push do agenta przez gRPC Stream + verify msgpack na agencie + verify
-PolicyAck w manager logach).
+**Phase 2 + 2F zamknięte i zweryfikowane E2E na żywych VM-kach.**
+PR `dev → main` + tag `v0.1.1` (bump minor — pierwsza realna funkcjonalność
+po MVP).
 
-`dev` ma `d57bb02`, `main` ma `e832bc0` (= rc7 + README).
-
-**Następnie:** PR dev→main, tag v0.1.1 (bump minor, pierwsza realna
-funkcjonalność po MVP), później Phase 3 (detekcja DLP).
+**Następnie:** Phase 3 (detekcja DLP — clipboard monitor + classifier
+Luhn/PESEL/IBAN/NIP), brainstorming na początek.
