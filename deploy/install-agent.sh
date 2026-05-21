@@ -186,6 +186,14 @@ log "cargo build --release -p scrooge-agent-bin (~5-10 min)"
 install -m 755 "$INSTALL_DIR/target/release/scrooge-agent" /usr/local/bin/scrooge-agent
 ok "binary → /usr/local/bin/scrooge-agent"
 
+# Chown $INSTALL_DIR na dev user (SUDO_USER) — install ran przez `sudo`,
+# więc clone + target/ owned by root. Bez tego późniejsze manualne `cargo
+# build` jako dev user fail'uje z "Permission denied .cargo-lock".
+if [[ -n "${SUDO_USER:-}" ]] && id "$SUDO_USER" >/dev/null 2>&1; then
+  chown -R "$SUDO_USER":"$SUDO_USER" "$INSTALL_DIR" 2>/dev/null || true
+  log "$INSTALL_DIR ownership → $SUDO_USER (manual rebuild możliwy bez sudo)"
+fi
+
 # ── User + katalogi ───────────────────────────────────────────────────────
 id scrooge >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin scrooge
 install -d -m 750 -o scrooge -g scrooge /var/lib/scrooge
