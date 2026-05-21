@@ -329,6 +329,21 @@ pub async fn script_windows(
 // Wspólny renderer
 // ────────────────────────────────────────────────────────────────────────────
 
+/// `GET /ca.pem` — publiczny endpoint zwracający Root CA managera w PEM.
+/// Brak auth (cert publiczny z definicji). Używany przez `deploy/install-agent.sh`
+/// (one-liner z github raw) do bootstrap'u TLS trust przed enrollment.
+pub async fn ca_pem(State(state): State<AppState>) -> ApiResult<Response> {
+    let path = &state.install_config().ca_cert_path;
+    let pem = std::fs::read_to_string(path).map_err(|e| {
+        ApiError::Internal(format!("cannot read CA cert at {path}: {e}"))
+    })?;
+    let resp = (
+        [(axum::http::header::CONTENT_TYPE, "application/x-pem-file")],
+        pem,
+    );
+    Ok(resp.into_response())
+}
+
 async fn render_for(
     state: &AppState,
     os: TargetOs,

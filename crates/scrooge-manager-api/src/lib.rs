@@ -87,6 +87,8 @@ pub fn router(state: AppState) -> Router {
             "/static/policy-editor/*path",
             get(handlers::policy_editor::asset),
         )
+        // Public CA endpoint dla deploy/install-agent.sh bootstrap.
+        .route("/ca.pem", get(handlers::install::ca_pem))
         .route("/health", get(handlers::health::health))
         .nest("/api/v1", v1)
         .merge(SwaggerUi::new("/api/v1/docs").url("/api/v1/openapi.json", ApiDoc::openapi()))
