@@ -125,21 +125,37 @@ impl TargetOs {
     ///
     /// **Format**: github raw + env vars (jak Phase 1 manager install.sh).
     /// Agent install script (`deploy/install-agent.sh`) sam pobierze CA
-    /// z `https://$MANAGER/ca.pem`, sklonuje branch, zbuduje agent
-    /// z source i postawi systemd unit.
+    /// z `$REST_BASE/ca.pem`, sklonuje branch, zbuduje agent z source
+    /// i postawi systemd unit.
     ///
-    /// `install_ref` = branch/tag git. Domyślnie `main` (release). Pre-release
-    /// testing (Phase 3 etc.): dashboard może wystawić selector.
-    fn one_liner(self, manager_endpoint: &str, token: &str, install_ref: &str) -> String {
+    /// Argumenty:
+    /// - `manager_endpoint`: host:port dla gRPC mTLS (z manager.yaml
+    ///   `install.public_grpc_endpoint`).
+    /// - `token`: enrollment token (UUID v4, single-use).
+    /// - `install_ref`: branch/tag git (`agent_release_tag` z config; default `main`).
+    /// - `rest_base`: URL HTTPS managera dla CA fetch (`public_rest_base_url`).
+    ///   Bez tego skrypt zgaduje port 55000 z host'a — co działa tylko dla
+    ///   standardowego compose. Z dashboardu zawsze przekazujemy explicit.
+    fn one_liner(
+        self,
+        manager_endpoint: &str,
+        token: &str,
+        install_ref: &str,
+        rest_base: Option<&str>,
+    ) -> String {
         let ref_part = if install_ref.is_empty() || install_ref == "main" {
             String::new()
         } else {
             format!(" INSTALL_REF={install_ref}")
         };
+        let rest_part = match rest_base {
+            Some(b) if !b.is_empty() => format!(" REST_BASE={b}"),
+            _ => String::new(),
+        };
         match self {
             Self::Linux | Self::MacOs => format!(
                 "curl -fsSL https://github.com/SQTX/Scrooge-DLP/raw/{branch}/deploy/install-agent.sh \
-                 | MANAGER={manager_endpoint} TOKEN={token}{ref_part} sudo -E bash",
+                 | MANAGER={manager_endpoint} TOKEN={token}{ref_part}{rest_part} sudo -E bash",
                 branch = if install_ref.is_empty() { "main" } else { install_ref },
             ),
             // Windows install-agent.ps1 jeszcze nie istnieje (Phase 3.x roadmap).
@@ -243,11 +259,12 @@ pub async fn create(
         .agent_release_tag
         .clone()
         .unwrap_or_default();
+    let rest_base = state.install_config().public_rest_base_url.as_deref();
     let install_command = state
         .install_config()
         .public_grpc_endpoint
         .as_ref()
-        .map(|mgr| os.one_liner(mgr, &raw, &install_ref));
+        .map(|mgr| os.one_liner(mgr, &raw, &install_ref, rest_base));
 
     tracing::info!(
         user = %claims.username,
@@ -568,9 +585,9 @@ mod tests {
     fn one_liner_per_os() {
         let mgr = "mgr.example.com:5443";
         let tok = "abc";
-        let lin = TargetOs::Linux.one_liner(mgr, tok, "");
-        let mac = TargetOs::MacOs.one_liner(mgr, tok, "");
-        let win = TargetOs::Windows.one_liner(mgr, tok, "");
+        let lin = TargetOs::Linux.one_liner(mgr, tok, "", None);
+        let mac = TargetOs::MacOs.one_liner(mgr, tok, "", None);
+        let win = TargetOs::Windows.one_liner(mgr, tok, "", None);
 
         // Linux/macOS — github raw + env vars (main branch default).
         assert!(lin.contains("github.com/SQTX/Scrooge-DLP/raw/main/deploy/install-agent.sh"));
@@ -585,9 +602,21 @@ mod tests {
     #[test]
     fn one_liner_with_install_ref_uses_branch() {
         let mgr = "mgr.example.com:5443";
-        let lin = TargetOs::Linux.one_liner(mgr, "tok", "claude/wizardly-fermi-ae7494");
+        let lin =
+            TargetOs::Linux.one_liner(mgr, "tok", "claude/wizardly-fermi-ae7494", None);
         assert!(lin.contains("raw/claude/wizardly-fermi-ae7494/deploy/install-agent.sh"));
         assert!(lin.contains("INSTALL_REF=claude/wizardly-fermi-ae7494"));
+    }
+
+    #[test]
+    fn one_liner_with_rest_base_emits_env_var() {
+        let lin = TargetOs::Linux.one_liner(
+            "mgr.example.com:5443",
+            "tok",
+            "",
+            Some("https://mgr.example.com:55000"),
+        );
+        assert!(lin.contains("REST_BASE=https://mgr.example.com:55000"));
     }
 
     #[test]

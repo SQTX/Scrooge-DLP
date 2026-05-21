@@ -41,9 +41,19 @@ default: Form jeśli form-friendly, YAML inaczej), ConfirmDialog przy YAML→For
 z unsupported features, klikalne `?` tooltipy z opisem każdego pola/akcji.
 Tag `v0.2.0` planowany. Polityki nadal **NIE enforce'owane** (to Phase 3).
 
-⏳ **Faza 3: Detekcja DLP** — `mod_clipscreen` (clipboard monitor),
-`mod_classifier` (Luhn/PESEL/IBAN/NIP), agent zaczyna realnie patrzeć
-na wrażliwe dane i blokować/logować.
+🚧 **Faza 3: Detekcja DLP — MVP w toku** — `mod_clipscreen` (Linux X11/Wayland
+przez `arboard`) + `LuhnClassifier` (numery kart) + sqlite WAL event queue +
+gRPC EventBatch upload + manager → PG events insert + dashboard "Events" tab
+(filtry severity/agent/type). Control plane PRODUKCYJNY: enroll + mTLS Stream +
+event upload działa E2E na żywej VM.
+**Caveat**: clipboard task wymaga GUI sesji (DISPLAY/WAYLAND_DISPLAY env).
+Systemd unit jako root nie zobaczy schowka — to expected, demo wymaga osobnej
+VM z Ubuntu Desktop. `systemd --user` unit roadmap w v0.3.x.
+
+⏳ **Faza 3 rozszerzenia (v0.3.x)** — macOS/Windows clipboard, PESEL/IBAN/NIP
+classifiers, USB hot-plug (`mod_devctl`), filesystem watcher (`mod_filemon`),
+`systemd --user` install option, prebuilt deb/rpm w release (zamiast
+build-from-source).
 
 🔜 **Backlog post-Phase 2F:**
 - **2G: Groups + per-agent tags GUI** — Agents tab edit tagów + `targets`

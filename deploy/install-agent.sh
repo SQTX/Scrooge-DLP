@@ -26,7 +26,20 @@ set -euo pipefail
 log()  { printf '\033[1;36m▸\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m✔\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m⚠\033[0m %s\n' "$*" >&2; }
-fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
+fail() {
+  printf '\033[1;31m✗\033[0m %s\n' "$*" >&2
+  printf '\n\033[1;33mℹ\033[0m  Reset state przed retry:\n' >&2
+  printf '   sudo systemctl stop scrooge-agent 2>/dev/null\n' >&2
+  printf '   sudo rm -rf /etc/scrooge /var/lib/scrooge /opt/scrooge-src\n' >&2
+  printf '   cd ~  # shell może być w skasowanym cwd\n' >&2
+  exit 1
+}
+
+# Bash zachowuje cwd nawet po `rm -rf`. Jeśli cwd nie istnieje, `cd ~`
+# przed jakąkolwiek pracą (rustup particularnie wymaga valid cwd).
+if ! pwd >/dev/null 2>&1; then
+  cd "$HOME"
+fi
 
 # ── Walidacja ─────────────────────────────────────────────────────────────
 [[ -n "${MANAGER:-}" ]] || fail "MANAGER nie ustawione (np. MANAGER=192.168.1.10:5443)"
@@ -47,6 +60,17 @@ fi
 log "Manager:    $MANAGER"
 log "Token:      ${TOKEN:0:8}…"
 log "Install ref: $INSTALL_REF"
+
+# ── Detect headless (brak GUI/DISPLAY) ────────────────────────────────────
+# Phase 3 clipboard DLP wymaga X11/Wayland w sesji usera. System service
+# (root, brak DISPLAY) NIE zobaczy schowka — enrollment + heartbeat
+# zadziała, ale event'y clipboard nie. Wczesny warn żeby user wiedział
+# czego się spodziewać.
+if [[ -z "${DISPLAY:-}" ]] && [[ -z "${WAYLAND_DISPLAY:-}" ]] && ! [[ -d /tmp/.X11-unix ]]; then
+  warn "headless host (brak DISPLAY/WAYLAND_DISPLAY/X11-unix) — clipboard DLP"
+  warn "NIE wygeneruje eventów. Enrollment + heartbeat zadziała."
+  warn "Dla pełnego demo Phase 3 użyj VM z Ubuntu Desktop (GUI sesja)."
+fi
 
 # ── Detect OS ─────────────────────────────────────────────────────────────
 [[ -r /etc/os-release ]] || fail "missing /etc/os-release"
