@@ -17,16 +17,25 @@
 //! - `mod_netinsp` przez NetworkExtension (Milestone 6, wymaga entitlements)
 //! - `mod_response` (Milestone 7)
 
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use async_trait::async_trait;
-use scrooge_agent_core::{EventSender, PlatformAgent, PlatformError, ResponseAction};
+use scrooge_agent_core::{
+    modules::classifier::ClassifierRegistry, EventSender, PlatformAgent, PlatformError,
+    ResponseAction,
+};
 
 /// Implementacja `PlatformAgent` dla macOS.
 #[derive(Debug, Default)]
 pub struct MacosAgent;
 
 impl MacosAgent {
+    /// Sygnatura spójna z `LinuxAgent::new` — pozwala `PlatformImpl::new(...)`
+    /// w bin'cie kompilować się cross-platform. Argumenty ignorowane do
+    /// czasu produkcyjnej implementacji modułów macOS (v0.4.x).
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(_classifiers: Arc<ClassifierRegistry>, _watch_paths: Vec<PathBuf>) -> Self {
         Self
     }
 }

@@ -14,7 +14,9 @@
 //! `mod_netinsp`, `mod_response`) wciąż stuby — wjadą w v0.3.x / v0.4.x.
 
 pub mod clipboard;
+pub mod filemon;
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -32,20 +34,22 @@ use tokio::task::JoinHandle;
 #[derive(Debug)]
 pub struct LinuxAgent {
     classifiers: Arc<ClassifierRegistry>,
+    watch_paths: Vec<PathBuf>,
     tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl Default for LinuxAgent {
     fn default() -> Self {
-        Self::new(Arc::new(ClassifierRegistry::with_defaults()))
+        Self::new(Arc::new(ClassifierRegistry::with_defaults()), Vec::new())
     }
 }
 
 impl LinuxAgent {
     #[must_use]
-    pub fn new(classifiers: Arc<ClassifierRegistry>) -> Self {
+    pub fn new(classifiers: Arc<ClassifierRegistry>, watch_paths: Vec<PathBuf>) -> Self {
         Self {
             classifiers,
+            watch_paths,
             tasks: Mutex::new(Vec::new()),
         }
     }
@@ -68,8 +72,27 @@ impl PlatformAgent for LinuxAgent {
         Ok(())
     }
 
-    async fn start_filemon(&self, _tx: EventSender) -> Result<(), PlatformError> {
-        tracing::info!(platform = "linux", module = "filemon", "started (stub)");
+    async fn start_filemon(&self, tx: EventSender) -> Result<(), PlatformError> {
+        if self.watch_paths.is_empty() {
+            tracing::info!(
+                platform = "linux",
+                module = "filemon",
+                "skipped (agent.watch_paths empty in config)"
+            );
+            return Ok(());
+        }
+        tracing::info!(
+            platform = "linux",
+            module = "filemon",
+            paths = self.watch_paths.len(),
+            "started"
+        );
+        let h = filemon::spawn(
+            self.watch_paths.clone(),
+            tx,
+            Arc::clone(&self.classifiers),
+        );
+        self.register_task(h);
         Ok(())
     }
 

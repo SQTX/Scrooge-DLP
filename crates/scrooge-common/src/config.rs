@@ -64,6 +64,13 @@ pub struct AgentRuntimeConfig {
 
     #[serde(default = "default_heartbeat_interval_secs")]
     pub heartbeat_interval_secs: u32,
+
+    /// Phase 3 M4.2 — ścieżki monitorowane przez mod_filemon (inotify
+    /// recursive). Pusty default = filemon nie startuje. Każda zmiana
+    /// pliku (create/modify/delete) → Event do managera; małe (<5MB)
+    /// czytelne UTF-8 pliki dodatkowo skanowane przez classifiery.
+    #[serde(default)]
+    pub watch_paths: Vec<String>,
 }
 
 impl AgentConfig {

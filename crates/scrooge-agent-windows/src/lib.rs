@@ -15,16 +15,23 @@
 //! implementacja (WFP, USN Journal, SetupAPI, minifilter driver) w Milestone 8+
 //! gdy będzie dostępna maszyna Windows do testów.
 
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use async_trait::async_trait;
-use scrooge_agent_core::{EventSender, PlatformAgent, PlatformError, ResponseAction};
+use scrooge_agent_core::{
+    modules::classifier::ClassifierRegistry, EventSender, PlatformAgent, PlatformError,
+    ResponseAction,
+};
 
 /// Stub implementacji `PlatformAgent` dla Windows.
 #[derive(Debug, Default)]
 pub struct WindowsAgent;
 
 impl WindowsAgent {
+    /// Sygnatura spójna z LinuxAgent::new — patrz uwaga w macos.
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(_classifiers: Arc<ClassifierRegistry>, _watch_paths: Vec<PathBuf>) -> Self {
         Self
     }
 }

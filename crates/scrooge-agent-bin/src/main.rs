@@ -119,8 +119,19 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Inicjalizacja platformowego agenta (cfg-gated).
-    let platform: Box<dyn PlatformAgent> = Box::new(PlatformImpl::default());
+    // Inicjalizacja platformowego agenta (cfg-gated). Phase 3 M4.2:
+    // przekazujemy classifier registry + watch_paths z agent.yaml.
+    let classifiers = std::sync::Arc::new(
+        scrooge_agent_core::modules::classifier::ClassifierRegistry::with_defaults(),
+    );
+    let watch_paths: Vec<std::path::PathBuf> = config
+        .agent
+        .watch_paths
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    let platform: Box<dyn PlatformAgent> =
+        Box::new(PlatformImpl::new(classifiers, watch_paths));
     platform.init().await.context("platform agent init")?;
 
     // Phase 3: lokalna kolejka eventów (sqlite WAL).
@@ -153,6 +164,10 @@ async fn main() -> Result<()> {
         .start_clipscreen(event_tx.clone())
         .await
         .context("start_clipscreen")?;
+    platform
+        .start_filemon(event_tx.clone())
+        .await
+        .context("start_filemon")?;
 
     // Zbierz info o systemie.
     let info = collect_system_info(env!("CARGO_PKG_VERSION")).context("collecting system info")?;
