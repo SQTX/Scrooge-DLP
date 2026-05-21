@@ -20,6 +20,12 @@ tracing.workspace     = true
 hostname.workspace    = true
 os_info.workspace     = true
 regex.workspace       = true
+sqlx.workspace        = true
+prost.workspace       = true
+chrono.workspace      = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

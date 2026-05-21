@@ -2386,10 +2386,14 @@ name = "scrooge-agent-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "hostname",
  "os_info",
+ "prost",
  "regex",
  "scrooge-proto",
+ "sqlx",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
