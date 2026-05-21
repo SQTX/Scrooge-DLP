@@ -9,13 +9,14 @@
 #     | MANAGER=192.168.1.10:5443 TOKEN=<UUID> sudo -E bash
 #
 # Wymagane env vars (przed `bash`, NIE przed curl):
-#   MANAGER  — host:port managera (gRPC + REST), np. 192.168.1.10:5443
+#   MANAGER  — host:port managera dla gRPC mTLS, np. 192.168.1.10:5443
 #   TOKEN    — enrollment token z dashboard "Add agent" (UUID v4)
 #
 # Opcjonalne env vars:
 #   INSTALL_REF  — branch/tag git (default: main; pre-release: claude/<auto>)
 #   INSTALL_DIR  — gdzie sklonowac repo (default: /opt/scrooge-src)
-#   REST_BASE    — base URL HTTPS managera dla CA fetch (default: https://$MANAGER)
+#   REST_BASE    — base URL HTTPS managera dla CA fetch (default:
+#                  https://<host>:55000 — manager REST port; gRPC jest na :5443)
 #   REPO_URL     — repo git (default: https://github.com/SQTX/Scrooge-DLP.git)
 #   ALLOW_ROOT   — '1' żeby pozwolić uruchomić jako root bez sudo bootstrap'u
 
@@ -34,8 +35,14 @@ fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 INSTALL_REF="${INSTALL_REF:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/scrooge-src}"
-REST_BASE="${REST_BASE:-https://$MANAGER}"
 REPO_URL="${REPO_URL:-https://github.com/SQTX/Scrooge-DLP.git}"
+
+# REST_BASE heurystyka: MANAGER=host:5443 (gRPC) → REST na host:55000.
+# Override przez explicit REST_BASE env var.
+if [[ -z "${REST_BASE:-}" ]]; then
+  MGR_HOST="${MANAGER%%:*}"
+  REST_BASE="https://${MGR_HOST}:55000"
+fi
 
 log "Manager:    $MANAGER"
 log "Token:      ${TOKEN:0:8}…"
@@ -77,12 +84,19 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 # ── Pobierz CA managera (bootstrap TLS trust) ─────────────────────────────
-install -d -m 750 /etc/scrooge
+# Dir 755 żeby world-read na ca.pem działał (agent.yaml zostaje 640).
+install -d -m 755 /etc/scrooge
 log "fetching CA from $REST_BASE/ca.pem"
 # `-k` na initial fetch — manager używa self-signed; po tym krok'u
 # wszystkie kolejne połączenia (gRPC enroll + Stream) są pełen mTLS.
 curl -fsSLk "$REST_BASE/ca.pem" -o /etc/scrooge/ca.pem
 chmod 644 /etc/scrooge/ca.pem
+
+# Sanity: czy to faktyczny PEM Root CA?
+if ! grep -q "BEGIN CERTIFICATE" /etc/scrooge/ca.pem; then
+  fail "CA fetch z $REST_BASE/ca.pem nie zwrócił PEM (port może być gRPC zamiast REST?). \
+Ustaw explicit REST_BASE=https://<host>:<rest_port>."
+fi
 
 # ── Clone + build ─────────────────────────────────────────────────────────
 log "cloning $REPO_URL @ $INSTALL_REF → $INSTALL_DIR"
