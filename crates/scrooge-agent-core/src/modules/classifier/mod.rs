@@ -12,7 +12,10 @@
 //! Phase 3 MVP: 1 klasyfikator (`LuhnClassifier`). Reszta (PESEL, IBAN, NIP)
 //! dochodzi iteracyjnie.
 
+pub mod iban;
 pub mod luhn;
+pub mod nip;
+pub mod pesel;
 
 use std::sync::Arc;
 
@@ -58,12 +61,15 @@ impl ClassifierRegistry {
         Self::default()
     }
 
-    /// Tworzy registry z domyślnymi klasyfikatorami dla Phase 3 MVP.
-    /// Obecnie: tylko Luhn (karty kredytowe).
+    /// Tworzy registry z domyślnymi klasyfikatorami (Phase 3 M4 set).
+    /// Obecnie: Luhn (karty kredytowe), PESEL, IBAN, NIP.
     #[must_use]
     pub fn with_defaults() -> Self {
         let mut r = Self::new();
         r.register(Arc::new(luhn::LuhnClassifier::new()));
+        r.register(Arc::new(pesel::PeselClassifier::new()));
+        r.register(Arc::new(iban::IbanClassifier::new()));
+        r.register(Arc::new(nip::NipClassifier::new()));
         r
     }
 
