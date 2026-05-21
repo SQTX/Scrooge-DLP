@@ -17,6 +17,10 @@ scrooge-proto      = { path = "../scrooge-proto" }
 async-trait.workspace = true
 tokio.workspace       = true
 tracing.workspace     = true
+arboard.workspace     = true
+sha2.workspace        = true
+chrono.workspace      = true
+uuid.workspace        = true
 
 [lints]
 workspace = true
