@@ -57,10 +57,12 @@ if [[ "$PKG" == "apt" ]]; then
   DEBIAN_FRONTEND=noninteractive apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential pkg-config nasm cmake git curl ca-certificates \
+    protobuf-compiler \
     libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
     libxkbcommon-dev libssl-dev
 else
   ${PKG} install -y gcc gcc-c++ make pkgconfig nasm cmake git curl ca-certificates \
+    protobuf-compiler \
     libxcb-devel libxkbcommon-devel openssl-devel
 fi
 
