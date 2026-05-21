@@ -41,19 +41,21 @@ default: Form jeśli form-friendly, YAML inaczej), ConfirmDialog przy YAML→For
 z unsupported features, klikalne `?` tooltipy z opisem każdego pola/akcji.
 Tag `v0.2.0` planowany. Polityki nadal **NIE enforce'owane** (to Phase 3).
 
-🚧 **Faza 3: Detekcja DLP — MVP w toku** — `mod_clipscreen` (Linux X11/Wayland
-przez `arboard`) + `LuhnClassifier` (numery kart) + sqlite WAL event queue +
-gRPC EventBatch upload + manager → PG events insert + dashboard "Events" tab
-(filtry severity/agent/type). Control plane PRODUKCYJNY: enroll + mTLS Stream +
-event upload działa E2E na żywej VM.
+✅ **Faza 3: Detekcja DLP MVP** — `mod_clipscreen` (Linux X11/Wayland przez
+`arboard`) + `LuhnClassifier` (numery kart) + sqlite WAL event queue + gRPC
+EventBatch upload + manager → PG events insert + dashboard "Events" tab
+(filtry severity/agent/type). E2E zweryfikowane na żywej VM: control plane +
+event pipeline + `--emit-test-event` injection → dashboard render. Tag
+`v0.3.0`.
 **Caveat**: clipboard task wymaga GUI sesji (DISPLAY/WAYLAND_DISPLAY env).
-Systemd unit jako root nie zobaczy schowka — to expected, demo wymaga osobnej
-VM z Ubuntu Desktop. `systemd --user` unit roadmap w v0.3.x.
+Systemd unit jako root nie zobaczy schowka — to expected, realny clipboard
+demo wymaga osobnej VM z Ubuntu Desktop. `systemd --user` unit roadmap w v0.3.x.
 
-⏳ **Faza 3 rozszerzenia (v0.3.x)** — macOS/Windows clipboard, PESEL/IBAN/NIP
+⏳ **Faza 3 rozszerzenia (v0.3.x)** — live policy broadcast (admin create →
+push live bez restart agenta), macOS/Windows clipboard, PESEL/IBAN/NIP
 classifiers, USB hot-plug (`mod_devctl`), filesystem watcher (`mod_filemon`),
 `systemd --user` install option, prebuilt deb/rpm w release (zamiast
-build-from-source).
+build-from-source), `update-manager.sh` one-liner.
 
 🔜 **Backlog post-Phase 2F:**
 - **2G: Groups + per-agent tags GUI** — Agents tab edit tagów + `targets`
@@ -130,9 +132,9 @@ build-from-source).
 
 ## Aktualnie
 
-**Phase 2 + 2F zamknięte i zweryfikowane E2E na żywych VM-kach.**
-PR `dev → main` + tag `v0.2.0` (bump minor — pierwsza realna funkcjonalność
-po MVP).
+**Phase 2 + 2F + 3 MVP zamknięte i zweryfikowane E2E na żywych VM-kach.**
+Tag `v0.3.0` (Phase 3 done = minor bump).
 
-**Następnie:** Phase 3 (detekcja DLP — clipboard monitor + classifier
-Luhn/PESEL/IBAN/NIP), brainstorming na początek.
+**Następnie:** Phase 3.x fixy (live policy broadcast + onelinery install
+poprawki + GUI VM demo), potem Phase 4 (event partycjonowanie + offline
+buffering + więcej classifierów).
