@@ -680,8 +680,10 @@
 
         if (!body.install_command) {
           errEl.textContent =
-            'Manager nie zwrocil install_command — sprawdz czy server.public_rest_base_url ' +
-            'jest ustawiony w manager.yaml.';
+            'Manager nie zwrocil install_command — sprawdz w manager.yaml: ' +
+            'server.public_grpc_endpoint (np. "1.2.3.4:5443") oraz ' +
+            'server.public_rest_base_url (np. "https://1.2.3.4:55000"). ' +
+            'Po edycji: docker compose restart manager.';
           errEl.classList.remove('hidden');
           return;
         }

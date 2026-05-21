@@ -13,12 +13,17 @@
 #   TOKEN    — enrollment token z dashboard "Add agent" (UUID v4)
 #
 # Opcjonalne env vars:
-#   INSTALL_REF  — branch/tag git (default: main; pre-release: claude/<auto>)
-#   INSTALL_DIR  — gdzie sklonowac repo (default: /opt/scrooge-src)
-#   REST_BASE    — base URL HTTPS managera dla CA fetch (default:
-#                  https://<host>:55000 — manager REST port; gRPC jest na :5443)
-#   REPO_URL     — repo git (default: https://github.com/SQTX/Scrooge-DLP.git)
-#   ALLOW_ROOT   — '1' żeby pozwolić uruchomić jako root bez sudo bootstrap'u
+#   INSTALL_REF   — branch/tag git (default: main; pre-release: claude/<auto>)
+#   INSTALL_DIR   — gdzie sklonowac repo (default: /opt/scrooge-src)
+#   REST_BASE     — base URL HTTPS managera dla CA fetch (default:
+#                   https://<host>:55000 — manager REST port; gRPC jest na :5443)
+#   REPO_URL      — repo git (default: https://github.com/SQTX/Scrooge-DLP.git)
+#   USER_SERVICE  — '1' = systemd --user unit (uruchom agent w sesji usera —
+#                   działa clipboard DLP, ale agent gaśnie przy logout).
+#                   Default 0 = system unit (root, headless OK, brak schowka).
+#                   Wymaga: `loginctl enable-linger $TARGET_USER` dla auto-start.
+#   TARGET_USER   — dla USER_SERVICE=1 — który user (default: $SUDO_USER albo `user`).
+#   ALLOW_ROOT    — '1' żeby pozwolić uruchomić jako root bez sudo bootstrap'u
 
 set -euo pipefail
 
@@ -49,6 +54,8 @@ fi
 INSTALL_REF="${INSTALL_REF:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/scrooge-src}"
 REPO_URL="${REPO_URL:-https://github.com/SQTX/Scrooge-DLP.git}"
+USER_SERVICE="${USER_SERVICE:-0}"
+TARGET_USER="${TARGET_USER:-${SUDO_USER:-user}}"
 
 # REST_BASE heurystyka: MANAGER=host:5443 (gRPC) → REST na host:55000.
 # Override przez explicit REST_BASE env var.
@@ -125,6 +132,29 @@ if ! command -v cargo >/dev/null 2>&1; then
   export PATH="$CARGO_HOME/bin:$PATH"
 fi
 
+# ── Pre-flight checks (fail fast zanim cargo build) ──────────────────────
+log "pre-flight: manager reachability"
+
+# 1. REST_BASE — sprawdź czy /ca.pem zwraca PEM. Najczęstszy bug: user
+#    podał MANAGER=host:5443 (gRPC), REST_BASE auto-zgaduje :55000, ale
+#    admin ma inny port → 404 / connection refused.
+CA_PROBE=$(curl -sk --connect-timeout 5 --max-time 10 "$REST_BASE/ca.pem" 2>&1 || true)
+if ! grep -q "BEGIN CERTIFICATE" <<<"$CA_PROBE"; then
+  fail "REST $REST_BASE/ca.pem nie zwraca PEM (sprawdź port + dostępność managera).
+  Override: REST_BASE=https://<host>:<rest_port>
+  Output (first 200 bytes): ${CA_PROBE:0:200}"
+fi
+ok "REST manager reachable: $REST_BASE"
+
+# 2. gRPC port — czysty TCP probe (nie pełen TLS handshake — to robi
+#    agent przy enroll). Wykrywa typowe network/firewall issues.
+MGR_HOST="${MANAGER%%:*}"
+MGR_PORT="${MANAGER##*:}"
+if ! timeout 5 bash -c "exec 3<>/dev/tcp/$MGR_HOST/$MGR_PORT" 2>/dev/null; then
+  fail "gRPC $MANAGER nieosiągalny (firewall? wrong port?)."
+fi
+ok "gRPC manager reachable: $MANAGER"
+
 # ── Pobierz CA managera (bootstrap TLS trust) ─────────────────────────────
 # Dir 755 żeby world-read na ca.pem działał (agent.yaml zostaje 640).
 install -d -m 755 /etc/scrooge
@@ -175,7 +205,52 @@ chown root:scrooge /etc/scrooge/agent.yaml
 ok "config → /etc/scrooge/agent.yaml"
 
 # ── systemd unit ──────────────────────────────────────────────────────────
-cat > /etc/systemd/system/scrooge-agent.service <<'EOF'
+if [[ "$USER_SERVICE" == "1" ]]; then
+  # systemd --user unit — działa w sesji TARGET_USER, ma DISPLAY/WAYLAND
+  # przy zalogowaniu → clipboard DLP funkcjonalny. Auto-start wymaga
+  # `loginctl enable-linger $TARGET_USER`.
+  id "$TARGET_USER" >/dev/null 2>&1 || fail "TARGET_USER=$TARGET_USER nie istnieje"
+  USER_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+  install -d -m 755 -o "$TARGET_USER" -g "$TARGET_USER" "$USER_HOME/.config/systemd/user"
+
+  # agent.yaml musi być readable dla TARGET_USER (nie tylko scrooge group).
+  usermod -aG scrooge "$TARGET_USER" 2>/dev/null || true
+
+  cat > "$USER_HOME/.config/systemd/user/scrooge-agent.service" <<EOF
+[Unit]
+Description=ScroogeDLP endpoint agent (user session)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/scrooge-agent --config /etc/scrooge/agent.yaml
+Restart=on-failure
+RestartSec=5
+Environment=LOG_FORMAT=json
+
+[Install]
+WantedBy=default.target
+EOF
+  chown "$TARGET_USER":"$TARGET_USER" "$USER_HOME/.config/systemd/user/scrooge-agent.service"
+
+  # Enable lingering — agent startuje przy boot bez wymagania login'u.
+  loginctl enable-linger "$TARGET_USER"
+
+  # Start jako TARGET_USER przez machinectl/systemctl-as-user.
+  sudo -u "$TARGET_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$TARGET_USER")" \
+    systemctl --user daemon-reload
+  sudo -u "$TARGET_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$TARGET_USER")" \
+    systemctl --user enable scrooge-agent
+  sudo -u "$TARGET_USER" XDG_RUNTIME_DIR="/run/user/$(id -u "$TARGET_USER")" \
+    systemctl --user restart scrooge-agent
+
+  ok "scrooge-agent (user service for $TARGET_USER) started"
+  echo
+  ok "Phase 3 clipboard DLP AKTYWNE — agent ma DISPLAY z sesji $TARGET_USER."
+  log "Tail logs: sudo -u $TARGET_USER journalctl --user -u scrooge-agent -f"
+else
+  # Default — system unit (root). Headless OK, ale brak schowka GUI.
+  cat > /etc/systemd/system/scrooge-agent.service <<'EOF'
 [Unit]
 Description=ScroogeDLP endpoint agent
 After=network-online.target
@@ -193,12 +268,13 @@ Environment=LOG_FORMAT=json
 WantedBy=multi-user.target
 EOF
 
-systemctl daemon-reload
-systemctl enable scrooge-agent
-systemctl restart scrooge-agent
+  systemctl daemon-reload
+  systemctl enable scrooge-agent
+  systemctl restart scrooge-agent
 
-ok "scrooge-agent started — tail logs: journalctl -u scrooge-agent -f"
-echo
-warn "Phase 3 clipboard DLP wymaga DISPLAY env. Systemd unit (root, no GUI)"
-warn "NIE zobaczy schowka. Demo: sudo systemctl stop scrooge-agent &&"
-warn "DISPLAY=:0 /usr/local/bin/scrooge-agent --config /etc/scrooge/agent.yaml"
+  ok "scrooge-agent (system unit, root) started — tail: journalctl -u scrooge-agent -f"
+  echo
+  warn "Phase 3 clipboard DLP wymaga DISPLAY env. System unit (root, no GUI)"
+  warn "NIE zobaczy schowka. Dla clipboard demo: USER_SERVICE=1 install"
+  warn "albo manualnie: DISPLAY=:0 /usr/local/bin/scrooge-agent ..."
+fi
