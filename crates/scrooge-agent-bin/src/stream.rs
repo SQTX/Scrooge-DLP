@@ -41,6 +41,9 @@ pub(crate) struct StreamConfig {
     pub policies_dir: PathBuf,
     pub agent_id: Uuid,
     pub heartbeat_interval: Duration,
+    /// Phase 3: persistent event queue (sqlite WAL) — event_uploader
+    /// czyta z niej batch'e i wysyła przez Stream.
+    pub queue: std::sync::Arc<scrooge_agent_core::queue::EventQueue>,
 }
 
 /// Główna pętla: connect → run stream → on disconnect, exponential backoff,
@@ -171,6 +174,13 @@ async fn run_one_session(
         }
     });
 
+    // Phase 3: event uploader — czyta sqlite queue, batch-pushuje przez `tx`.
+    let event_uploader = crate::event_uploader::spawn(
+        std::sync::Arc::clone(&cfg.queue),
+        tx.clone(),
+        shutdown.clone(),
+    );
+
     // Inbound reader loop — handle Heartbeat ack, PolicyUpdate, Command.
     let policies_dir = cfg.policies_dir.clone();
     let tx_ack = tx.clone();
@@ -189,6 +199,8 @@ async fn run_one_session(
 
     heartbeat.abort();
     let _ = heartbeat.await;
+    event_uploader.abort();
+    let _ = event_uploader.await;
     drop(tx);
     result
 }

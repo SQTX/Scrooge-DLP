@@ -18,15 +18,17 @@
 //! 5. Otwórz persistent `Stream` z heartbeat + auto-reconnect.
 //! 6. SIGINT/SIGTERM → graceful shutdown.
 
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use scrooge_agent_core::{collect_system_info, PlatformAgent};
+use scrooge_agent_core::{collect_system_info, queue::EventQueue, PlatformAgent};
 use scrooge_common::config::AgentConfig;
-use tokio::sync::watch;
+use scrooge_proto::v1::Event;
+use tokio::sync::{mpsc, watch};
 
 mod enroll;
+mod event_uploader;
 mod state;
 mod stream;
 mod telemetry;
@@ -92,6 +94,37 @@ async fn main() -> Result<()> {
     let platform: Box<dyn PlatformAgent> = Box::new(PlatformImpl::default());
     platform.init().await.context("platform agent init")?;
 
+    // Phase 3: lokalna kolejka eventów (sqlite WAL).
+    let queue = Arc::new(
+        EventQueue::open(&data_dir.join("events.db"))
+            .await
+            .context("opening event queue")?,
+    );
+
+    // Channel pomiędzy modułami platformowymi (clipboard / future filemon / ...)
+    // a kolejką. Buffer 256: ~5s ruchu przy szczytowych poll'ach.
+    let (event_tx, mut event_rx) = mpsc::channel::<Event>(256);
+
+    // Collector — wpycha każdy emitowany Event do sqlite. Działa do końca
+    // życia procesu; gdy channel zamknięty (modules drop), exit.
+    {
+        let q = Arc::clone(&queue);
+        tokio::spawn(async move {
+            while let Some(ev) = event_rx.recv().await {
+                if let Err(e) = q.enqueue(&ev).await {
+                    tracing::warn!(error = %e, "event queue enqueue failed");
+                }
+            }
+            tracing::info!("event collector task exiting (channel closed)");
+        });
+    }
+
+    // Aktywacja modułów detekcji.
+    platform
+        .start_clipscreen(event_tx.clone())
+        .await
+        .context("start_clipscreen")?;
+
     // Zbierz info o systemie.
     let info = collect_system_info(env!("CARGO_PKG_VERSION")).context("collecting system info")?;
     tracing::info!(
@@ -148,6 +181,7 @@ async fn main() -> Result<()> {
         policies_dir: data_dir.join("policies"),
         agent_id: state.agent_id,
         heartbeat_interval: Duration::from_secs(u64::from(config.agent.heartbeat_interval_secs)),
+        queue: Arc::clone(&queue),
     };
 
     let stream_result = stream::run_with_reconnect(stream_cfg, shutdown_rx).await;
