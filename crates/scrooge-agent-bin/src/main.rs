@@ -62,9 +62,20 @@ struct Args {
     /// dev-agent` (token z `dev-certs/enrollment-token.txt` przez env).
     #[arg(long, env = "ENROLLMENT_TOKEN")]
     enrollment_token: Option<String>,
+
+    /// Dev only: wstrzykuje sztuczny clipboard event (kart kredytowa
+    /// Visa 4532015112830366 redacted) do lokalnej event queue i wychodzi.
+    /// Działający scrooge-agent service podbierze go w następnym tick'u
+    /// event_uploader (5s) i wypchnie do managera. Headless VM friendly —
+    /// nie wymaga DISPLAY ani clipboard hook'u.
+    ///
+    /// Liczba eventów do wstrzyknięcia (default 1).
+    #[arg(long, value_name = "COUNT")]
+    emit_test_event: Option<u32>,
 }
 
 #[tokio::main]
+#[allow(clippy::too_many_lines)]
 async fn main() -> Result<()> {
     let args = Args::parse();
     telemetry::init(args.log_format);
@@ -89,6 +100,24 @@ async fn main() -> Result<()> {
     let data_dir = PathBuf::from(&config.agent.data_dir);
     std::fs::create_dir_all(&data_dir)
         .with_context(|| format!("creating data_dir {}", data_dir.display()))?;
+
+    // Dev: --emit-test-event <N> — wstrzyknij N sztucznych clipboard eventów
+    // do sqlite queue i wyjdź. Działający scrooge-agent service podbierze
+    // je w next tick (5s) i wypchnie do managera.
+    if let Some(count) = args.emit_test_event {
+        let queue = scrooge_agent_core::queue::EventQueue::open(&data_dir.join("events.db"))
+            .await
+            .context("opening event queue")?;
+        for i in 0..count {
+            let ev = build_test_event(i);
+            let id = queue.enqueue(&ev).await.context("enqueue test event")?;
+            tracing::info!(id, "test event enqueued");
+        }
+        println!("✔ wstrzyknięto {count} test event(ów) do {}/events.db", data_dir.display());
+        println!("ℹ  scrooge-agent service je wypcha w next event_uploader tick (~5s).");
+        println!("ℹ  Verify w dashboardzie: Events tab → Refresh.");
+        return Ok(());
+    }
 
     // Inicjalizacja platformowego agenta (cfg-gated).
     let platform: Box<dyn PlatformAgent> = Box::new(PlatformImpl::default());
@@ -219,5 +248,41 @@ async fn shutdown_signal() {
     tokio::select! {
         () = ctrl_c => tracing::info!("Ctrl+C received, shutting down"),
         () = terminate => tracing::info!("SIGTERM received, shutting down"),
+    }
+}
+
+
+/// Sztuczny clipboard event z wbudowanym Visa test number (Luhn-valid).
+/// Używane przez `--emit-test-event` dla weryfikacji event pipeline na
+/// headless VM (bez DISPLAY/clipboard).
+fn build_test_event(idx: u32) -> scrooge_proto::v1::Event {
+    use scrooge_proto::v1::{event::Details, ClipboardEvent, Event, EventType, Match, Severity};
+    Event {
+        event_id: uuid::Uuid::new_v4().to_string(),
+        timestamp_ns: chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+        agent_id: String::new(), // mTLS Subject CN authoritative
+        r#type: EventType::ClipboardCopy as i32,
+        severity: Severity::Medium as i32,
+        direction: 0,
+        user_name: format!("test-user-{idx}"),
+        process_id: 0,
+        process_name: "scrooge-agent --emit-test-event".to_string(),
+        details: Some(Details::Clipboard(ClipboardEvent {
+            content_size: 16,
+            content_preview: "**** **** **** 0366".to_string(),
+            content_hash: vec![],
+            mime_type: "text/plain".to_string(),
+            source_process_name: String::new(),
+            was_cleared: false,
+        })),
+        matched_policy_id: String::new(),
+        matched_rule_id: String::new(),
+        action_taken: 0,
+        matches: vec![Match {
+            classifier_id: "credit_card".to_string(),
+            match_count: 1,
+            sample_excerpt: "**** **** **** 0366".to_string(),
+        }],
+        forward_to_siem: false,
     }
 }
