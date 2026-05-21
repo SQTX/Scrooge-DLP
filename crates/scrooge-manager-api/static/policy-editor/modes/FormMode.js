@@ -9,6 +9,7 @@
 
 import { formToYaml } from '../codec/formToYaml.js';
 import { MetadataSection } from '../sections/MetadataSection.js';
+import { TargetsSection } from '../sections/TargetsSection.js';
 import { RuleSection } from '../sections/RuleSection.js';
 import { SourceListEditor } from '../sections/SourceListEditor.js';
 import { DestinationListEditor } from '../sections/DestinationListEditor.js';
@@ -51,6 +52,16 @@ export class FormMode {
       onChange: (md) => this._sectionChanged('metadata', md),
     });
     this.sections.metadata.render();
+
+    // Targets section.
+    const targetsMount = document.createElement('div');
+    this.leftPane.appendChild(targetsMount);
+    this.sections.targets = new TargetsSection({
+      mount: targetsMount,
+      initialState: this.formState.targets ?? {},
+      onChange: (t) => this._sectionChanged('targets', t),
+    });
+    this.sections.targets.render();
 
     // Rule section.
     const ruleMount = document.createElement('div');

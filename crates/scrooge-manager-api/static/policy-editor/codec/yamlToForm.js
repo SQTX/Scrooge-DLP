@@ -65,6 +65,7 @@ function parsedToFormState(parsed) {
       description: md.description ?? '',
       priority: Number.isFinite(parsed.priority) ? parsed.priority : 100,
     },
+    targets: parsedTargetsToForm(parsed.targets),
     rule: firstRule ? {
       id: firstRule.id ?? 'my-rule',
       name: firstRule.name ?? '',
@@ -79,6 +80,24 @@ function parsedToFormState(parsed) {
     conditions: firstRule?.conditions ? normalizeConditions(firstRule.conditions) : null,
   };
   return fs;
+}
+
+function parsedTargetsToForm(t) {
+  if (!t || typeof t !== 'object') {
+    return { mode: 'all', os: [], tags: {}, groups: [], agent_ids: [] };
+  }
+  const tm = t['match'] ?? {};
+  const os = Array.isArray(tm.os) ? [...tm.os] : [];
+  const tags = (tm.tags && typeof tm.tags === 'object') ? { ...tm.tags } : {};
+  const groups = Array.isArray(tm.groups) ? [...tm.groups] : [];
+  const agentIds = Array.isArray(tm.agent_ids) ? [...tm.agent_ids] : [];
+  // Wybierz mode na podstawie tego co wypełnione. Jeśli >1 trybów (miks) —
+  // supportability flaguje jako unsupported, mode w form pokaże pierwszy.
+  let mode = 'all';
+  if (Object.keys(tags).length > 0) mode = 'tags';
+  else if (groups.length > 0) mode = 'groups';
+  else if (agentIds.length > 0) mode = 'agent_ids';
+  return { mode, os, tags, groups, agent_ids: agentIds };
 }
 
 function normalizeItem(it) {

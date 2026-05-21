@@ -26,10 +26,17 @@ export function listUnsupported(parsed) {
     out.push(`reguły inbound (${inbound.length})`);
   }
 
+  // Targets form mode (Sub-faza 2F.14) pokrywa match.os + JEDEN z
+  // {tags, groups, agent_ids}. Miks dwóch lub exclude — nadal unsupported.
   const targets = parsed.targets ?? {};
   const tm = targets['match'] ?? {};
-  if ((tm.os ?? []).length || hasKeys(tm.tags) || (tm.groups ?? []).length || (tm.agent_ids ?? []).length) {
-    out.push('targets.match (filtering agentów)');
+  const matchModes = [
+    hasKeys(tm.tags) ? 'tags' : null,
+    (tm.groups ?? []).length > 0 ? 'groups' : null,
+    (tm.agent_ids ?? []).length > 0 ? 'agent_ids' : null,
+  ].filter(Boolean);
+  if (matchModes.length > 1) {
+    out.push(`miks targets.match (${matchModes.join(' + ')}) — form pokrywa tylko jeden tryb`);
   }
   const te = targets.exclude ?? {};
   if ((te.hostnames ?? []).length || (te.agent_ids ?? []).length) {

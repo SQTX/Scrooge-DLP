@@ -9,9 +9,11 @@
 // wjadą w 2F.5-7.
 
 import { defaultRuleState } from '../sections/RuleSection.js';
+import { defaultTargetsState } from '../sections/TargetsSection.js';
 
 const DEFAULT_FORM_STATE = {
   metadata: { name: 'my-policy', description: '', priority: 100 },
+  targets: defaultTargetsState(),
   rule: defaultRuleState(),
   sources: [],
   destinations: [],
@@ -43,6 +45,10 @@ export function formToYaml(formState, _ghostYaml = null) {
   if (md.description) {
     lines.push(`  description: ${yamlString(md.description)}`);
   }
+
+  // Targets — emit'ujemy tylko aktywny match mode (form UX XOR).
+  emitTargets(lines, formState.targets);
+
   lines.push(`priority: ${Number.isFinite(md.priority) ? md.priority : 100}`);
 
   // ── Rule ─────────────────────────────────────────────────────────────
@@ -66,6 +72,38 @@ export function formToYaml(formState, _ghostYaml = null) {
   }
 
   return lines.join('\n') + '\n';
+}
+
+function emitTargets(lines, t) {
+  if (!t) return;
+  const os = Array.isArray(t.os) ? t.os : [];
+  const mode = t.mode ?? 'all';
+  // Mode='all' bez OS = brak `targets:` block (match wszystkich = default).
+  const hasMode = mode === 'tags' ? hasKeys(t.tags)
+    : mode === 'groups' ? (t.groups ?? []).length > 0
+    : mode === 'agent_ids' ? (t.agent_ids ?? []).length > 0
+    : false;
+  if (!hasMode && os.length === 0) return;
+
+  lines.push('targets:');
+  lines.push('  match:');
+  if (os.length > 0) {
+    lines.push(`    os: [${os.map(yamlString).join(', ')}]`);
+  }
+  if (mode === 'tags' && hasKeys(t.tags)) {
+    lines.push('    tags:');
+    for (const [k, v] of Object.entries(t.tags)) {
+      lines.push(`      ${yamlString(k)}: ${yamlString(String(v))}`);
+    }
+  } else if (mode === 'groups' && (t.groups ?? []).length > 0) {
+    lines.push(`    groups: [${t.groups.map(yamlString).join(', ')}]`);
+  } else if (mode === 'agent_ids' && (t.agent_ids ?? []).length > 0) {
+    lines.push(`    agent_ids: [${t.agent_ids.map(yamlString).join(', ')}]`);
+  }
+}
+
+function hasKeys(obj) {
+  return !!obj && typeof obj === 'object' && Object.keys(obj).length > 0;
 }
 
 function emitConditions(lines, cond) {

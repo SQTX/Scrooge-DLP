@@ -41,6 +41,8 @@ const METADATA_SECTION_JS: &str =
     include_str!("../../static/policy-editor/sections/MetadataSection.js");
 const RULE_SECTION_JS: &str =
     include_str!("../../static/policy-editor/sections/RuleSection.js");
+const TARGETS_SECTION_JS: &str =
+    include_str!("../../static/policy-editor/sections/TargetsSection.js");
 const SOURCE_LIST_EDITOR_JS: &str =
     include_str!("../../static/policy-editor/sections/SourceListEditor.js");
 const DESTINATION_LIST_EDITOR_JS: &str =
@@ -72,6 +74,7 @@ pub async fn asset(Path(path): Path<String>) -> Response {
         "codec/supportability.js" => SUPPORTABILITY_JS,
         "sections/MetadataSection.js" => METADATA_SECTION_JS,
         "sections/RuleSection.js" => RULE_SECTION_JS,
+        "sections/TargetsSection.js" => TARGETS_SECTION_JS,
         "sections/SourceListEditor.js" => SOURCE_LIST_EDITOR_JS,
         "sections/DestinationListEditor.js" => DESTINATION_LIST_EDITOR_JS,
         "sections/ConditionsSection.js" => CONDITIONS_SECTION_JS,
