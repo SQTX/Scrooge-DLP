@@ -2388,6 +2388,7 @@ dependencies = [
  "async-trait",
  "hostname",
  "os_info",
+ "regex",
  "scrooge-proto",
  "thiserror 2.0.18",
  "tokio",
