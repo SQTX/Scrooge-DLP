@@ -28,12 +28,19 @@ fail() { printf '\033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 # ── Znajdź repo ───────────────────────────────────────────────────────────
 INSTALL_DIR="${INSTALL_DIR:-}"
 if [[ -z "$INSTALL_DIR" ]]; then
-  for cand in "$HOME/Scrooge-DLP" "/opt/scrooge-src" "/opt/Scrooge-DLP"; do
+  # Pod sudo $HOME=/root — sprawdzamy też SUDO_USER home.
+  CANDIDATES=("$HOME/Scrooge-DLP" "/opt/scrooge-src" "/opt/Scrooge-DLP")
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    USER_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6 2>/dev/null || true)
+    [[ -n "$USER_HOME" ]] && CANDIDATES=("$USER_HOME/Scrooge-DLP" "${CANDIDATES[@]}")
+  fi
+  for cand in "${CANDIDATES[@]}"; do
     [[ -d "$cand/.git" ]] && INSTALL_DIR="$cand" && break
   done
 fi
 [[ -n "$INSTALL_DIR" && -d "$INSTALL_DIR/.git" ]] \
-  || fail "nie znalazłem Scrooge-DLP repo. Ustaw INSTALL_DIR=<path>."
+  || fail "nie znalazłem Scrooge-DLP repo. Ustaw INSTALL_DIR=<path>.
+  Sprawdzone: $HOME/Scrooge-DLP, /opt/scrooge-src, /opt/Scrooge-DLP${SUDO_USER:+, /home/$SUDO_USER/Scrooge-DLP}"
 
 log "repo: $INSTALL_DIR"
 cd "$INSTALL_DIR"
