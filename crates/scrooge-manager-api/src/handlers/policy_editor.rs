@@ -28,6 +28,7 @@ const VALIDATION_PANEL_JS: &str =
 const MODE_SWITCH_JS: &str = include_str!("../../static/policy-editor/ui/ModeSwitch.js");
 const CONFIRM_DIALOG_JS: &str =
     include_str!("../../static/policy-editor/ui/ConfirmDialog.js");
+const HELP_TIP_JS: &str = include_str!("../../static/policy-editor/ui/HelpTip.js");
 
 // Codec.
 const FORM_TO_YAML_JS: &str = include_str!("../../static/policy-editor/codec/formToYaml.js");
@@ -65,6 +66,7 @@ pub async fn asset(Path(path): Path<String>) -> Response {
         "ui/ValidationPanel.js" => VALIDATION_PANEL_JS,
         "ui/ModeSwitch.js" => MODE_SWITCH_JS,
         "ui/ConfirmDialog.js" => CONFIRM_DIALOG_JS,
+        "ui/HelpTip.js" => HELP_TIP_JS,
         "codec/formToYaml.js" => FORM_TO_YAML_JS,
         "codec/yamlToForm.js" => YAML_TO_FORM_JS,
         "codec/supportability.js" => SUPPORTABILITY_JS,

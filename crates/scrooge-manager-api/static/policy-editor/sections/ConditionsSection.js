@@ -10,6 +10,17 @@
 //   - filename_regex  string (regex na filename bez ścieżki)
 //   - path_regex      string (regex na pełnej ścieżce)
 
+import { helpTip } from '../ui/HelpTip.js';
+
+const HEADER_TIP =
+  'Dodatkowe filtry stosowane PO matchu source+destination. Jeśli condition '
+  + 'nie pasuje — rule nie wpada w action.\n\n'
+  + '• file_size_min/max — rozmiar pliku (np. "1KB", "2MB", "1024")\n'
+  + '• file_extensions — lista rozszerzeń bez kropki (np. xlsx, pdf, docx)\n'
+  + '• filename_regex — regex matching nazwy pliku (bez ścieżki)\n'
+  + '• path_regex — regex matching pełnej ścieżki\n\n'
+  + 'Wszystkie opcjonalne — pusta sekcja = brak dodatkowych filtrów.';
+
 export class ConditionsSection {
   /**
    * @param {{ mount: HTMLElement, initialState: object|null, onChange: (state) => void }} opts
@@ -42,6 +53,11 @@ export class ConditionsSection {
       this.render();
     });
     this.root.appendChild(header);
+    // Tooltip obok header'a (poza klikalnym buttonem żeby `?` nie toggle'ował).
+    const tipWrap = document.createElement('span');
+    tipWrap.className = 'inline-flex ml-1';
+    tipWrap.appendChild(helpTip(HEADER_TIP));
+    this.root.firstChild.parentNode.insertBefore(tipWrap, this.root.firstChild.nextSibling);
 
     if (!this.expanded) return;
 

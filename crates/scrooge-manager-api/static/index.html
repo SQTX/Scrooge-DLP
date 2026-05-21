@@ -231,10 +231,8 @@
           Schema: <code class="bg-gray-100 px-1 rounded">scroogedlp.io/v1</code> — pełna dokumentacja w
           <a href="/api/v1/docs" target="_blank" class="text-blue-600 hover:underline">Swagger UI</a>.
         </p>
-        <textarea id="policy-yaml-input"
-                  class="w-full h-96 px-3 py-2 border border-gray-300 rounded font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  spellcheck="false"
-                  placeholder="apiVersion: scroogedlp.io/v1&#10;kind: Policy&#10;metadata:&#10;  name: example&#10;..."></textarea>
+        <!-- Body modala buduje się dynamicznie przez static/policy-editor/ module.
+             FormMode lub YamlMode wstrzykują własny DOM przed #policy-validation. -->
         <div id="policy-validation" class="text-xs"></div>
       </div>
       <div class="px-6 py-3 bg-gray-50 border-t border-gray-200 flex justify-between items-center">

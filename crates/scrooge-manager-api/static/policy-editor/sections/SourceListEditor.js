@@ -12,6 +12,8 @@
 //   - file_match      { classifiers: [string] }
 //   - any             (no fields)
 
+import { helpTip } from '../ui/HelpTip.js';
+
 const SOURCE_TYPES = [
   { value: 'directory', label: 'directory' },
   { value: 'usb', label: 'usb' },
@@ -20,6 +22,18 @@ const SOURCE_TYPES = [
   { value: 'file_match', label: 'file_match' },
   { value: 'any', label: 'any' },
 ];
+
+const HEADER_TIP =
+  'Skąd dane pochodzą — co rule matchuje jako "source":\n\n'
+  + '• directory — plik w lokalnym folderze (paths z glob, np. /srv/finance/**)\n'
+  + '• usb — plik na podłączonym pendrive/dysku zewnętrznym '
+  + '(except_serials = whitelist firmowych)\n'
+  + '• network_download — plik pobrany z HTTP/HTTPS '
+  + '(domains = lista źródeł, domains_except = whitelist)\n'
+  + '• email_attachment — załącznik z klienta poczty (POP3/IMAP/Outlook)\n'
+  + '• file_match — plik którego zawartość pasuje do nazwanego klasyfikatora '
+  + '(credit-card-numbers, polish-pesel, iban-numbers itp.)\n'
+  + '• any — wildcard (dowolne źródło)';
 
 export class SourceListEditor {
   /**
@@ -36,10 +50,14 @@ export class SourceListEditor {
 
     const head = document.createElement('div');
     head.className = 'flex items-center justify-between mb-2';
+    const labelWrap = document.createElement('div');
+    labelWrap.className = 'flex items-center';
     const label = document.createElement('div');
     label.className = 'text-xs uppercase tracking-wide text-gray-500 font-medium';
     label.textContent = 'Sources';
-    head.appendChild(label);
+    labelWrap.appendChild(label);
+    labelWrap.appendChild(helpTip(HEADER_TIP));
+    head.appendChild(labelWrap);
 
     const addBtn = document.createElement('button');
     addBtn.type = 'button';

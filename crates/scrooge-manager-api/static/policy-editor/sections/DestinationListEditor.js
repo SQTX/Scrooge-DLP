@@ -12,6 +12,8 @@
 //   - any_external    (no fields)
 //   - any             (no fields)
 
+import { helpTip } from '../ui/HelpTip.js';
+
 const DEST_TYPES = [
   { value: 'directory', label: 'directory' },
   { value: 'usb', label: 'usb' },
@@ -21,6 +23,19 @@ const DEST_TYPES = [
   { value: 'any_external', label: 'any_external' },
   { value: 'any', label: 'any' },
 ];
+
+const HEADER_TIP =
+  'Gdzie dane idą — co rule matchuje jako "destination":\n\n'
+  + '• directory — kopia/move do lokalnego folderu\n'
+  + '• usb — zapis na pendrive/dysk zewnętrzny '
+  + '(except_serials = whitelist firmowych)\n'
+  + '• network_upload — HTTP POST/PUT, FTP, etc. '
+  + '(domains = blokowane, np. *.dropbox.com)\n'
+  + '• clipboard — schowek systemowy (Ctrl+C/Cmd+C)\n'
+  + '• print — drukarka (system print spooler)\n'
+  + '• any_external — skrót: USB + network + clipboard + print '
+  + '("wyciekło z endpointa")\n'
+  + '• any — wildcard (dowolna destynacja)';
 
 export class DestinationListEditor {
   /**
@@ -37,10 +52,14 @@ export class DestinationListEditor {
 
     const head = document.createElement('div');
     head.className = 'flex items-center justify-between mb-2';
+    const labelWrap = document.createElement('div');
+    labelWrap.className = 'flex items-center';
     const label = document.createElement('div');
     label.className = 'text-xs uppercase tracking-wide text-gray-500 font-medium';
     label.textContent = 'Destinations';
-    head.appendChild(label);
+    labelWrap.appendChild(label);
+    labelWrap.appendChild(helpTip(HEADER_TIP));
+    head.appendChild(labelWrap);
 
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
