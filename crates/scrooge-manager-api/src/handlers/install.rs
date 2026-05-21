@@ -109,6 +109,10 @@ impl TargetOs {
     }
 
     /// Ścieżka do endpointa renderującego dla tego OS (bez query string).
+    /// Używana dla legacy manager-mediated install URL'a; obecny dashboard
+    /// one-liner używa github raw, ale endpointy `/install.sh` itp. wciąż
+    /// istnieją dla backward-compat.
+    #[allow(dead_code)]
     fn script_path(self) -> &'static str {
         match self {
             Self::Linux => "/api/v1/install.sh",
@@ -117,28 +121,33 @@ impl TargetOs {
         }
     }
 
-    /// Renderuje one-liner gotowy do skopiowania. Linux/macOS używają bash'a,
-    /// Windows — PowerShell przez `iwr … | iex`.
+    /// Renderuje one-liner do skopiowania w dashboardzie.
     ///
-    /// **`-k` / disabled cert validation** — jednorazowy akceptowalny ryzyk
-    /// przy initial bootstrap. Manager używa cert podpisanego przez nasz
-    /// Root CA, ale endpoint nie ma tego CA w trust store. Po enrollment
-    /// agent ma już CA wbity (embedded w install.sh) i wszystkie kolejne
-    /// połączenia (gRPC) są mTLS z pełną weryfikacją. Identyczny pattern
-    /// co Wazuh agent install.
-    fn one_liner(self, base: &str, token: &str) -> String {
-        let path = self.script_path();
+    /// **Format**: github raw + env vars (jak Phase 1 manager install.sh).
+    /// Agent install script (`deploy/install-agent.sh`) sam pobierze CA
+    /// z `https://$MANAGER/ca.pem`, sklonuje branch, zbuduje agent
+    /// z source i postawi systemd unit.
+    ///
+    /// `install_ref` = branch/tag git. Domyślnie `main` (release). Pre-release
+    /// testing (Phase 3 etc.): dashboard może wystawić selector.
+    fn one_liner(self, manager_endpoint: &str, token: &str, install_ref: &str) -> String {
+        let ref_part = if install_ref.is_empty() || install_ref == "main" {
+            String::new()
+        } else {
+            format!(" INSTALL_REF={install_ref}")
+        };
         match self {
-            Self::Linux | Self::MacOs => {
-                format!("curl -fsSLk '{base}{path}?token={token}' | sudo bash")
-            },
-            // PowerShell 5.1 (default Win10/11/Server) NIE wspiera
-            // `-SkipCertificateCheck` na `iwr` — musimy globalnie wyłączyć
-            // walidację w session. PS 6+ ma flag, ale dla kompat. z 5.1
-            // używamy ServicePointManager.
+            Self::Linux | Self::MacOs => format!(
+                "curl -fsSL https://github.com/SQTX/Scrooge-DLP/raw/{branch}/deploy/install-agent.sh \
+                 | MANAGER={manager_endpoint} TOKEN={token}{ref_part} sudo -E bash",
+                branch = if install_ref.is_empty() { "main" } else { install_ref },
+            ),
+            // Windows install-agent.ps1 jeszcze nie istnieje (Phase 3.x roadmap).
+            // Na razie zwracamy placeholder z wyjaśnieniem.
             Self::Windows => format!(
-                "[Net.ServicePointManager]::ServerCertificateValidationCallback = {{$true}}; \
-                 iwr -UseBasicParsing '{base}{path}?token={token}' | iex"
+                "# Windows install-from-source NIE wspierany jeszcze.\n\
+                 # MANAGER={manager_endpoint} TOKEN={token}\n\
+                 # Roadmap: deploy/install-agent.ps1 w v0.3.x"
             ),
         }
     }
@@ -225,11 +234,13 @@ pub async fn create(
     .execute(state.pool())
     .await?;
 
+    // One-liner używa github raw + env vars — nie wymaga public_rest_base_url
+    // (tylko public_grpc_endpoint wstrzykiwane do MANAGER=).
     let install_command = state
         .install_config()
-        .public_rest_base_url
+        .public_grpc_endpoint
         .as_ref()
-        .map(|base| os.one_liner(base, &raw));
+        .map(|mgr| os.one_liner(mgr, &raw, ""));
 
     tracing::info!(
         user = %claims.username,
@@ -548,22 +559,28 @@ mod tests {
 
     #[test]
     fn one_liner_per_os() {
-        let base = "https://mgr.example.com";
+        let mgr = "mgr.example.com:5443";
         let tok = "abc";
-        let lin = TargetOs::Linux.one_liner(base, tok);
-        let mac = TargetOs::MacOs.one_liner(base, tok);
-        let win = TargetOs::Windows.one_liner(base, tok);
+        let lin = TargetOs::Linux.one_liner(mgr, tok, "");
+        let mac = TargetOs::MacOs.one_liner(mgr, tok, "");
+        let win = TargetOs::Windows.one_liner(mgr, tok, "");
 
-        // Linux/macOS curl z -k (skip cert verify dla self-signed manager).
-        assert!(lin.starts_with("curl -fsSLk"));
-        assert!(lin.contains("/install.sh"));
-        assert!(mac.starts_with("curl -fsSLk"));
-        assert!(mac.contains("/install-macos.sh"));
-        // Windows: ServicePointManager bypass + iwr.
-        assert!(win.contains("ServerCertificateValidationCallback"));
-        assert!(win.contains("iwr"));
-        assert!(win.contains("/install.ps1"));
-        assert!(win.contains("| iex"));
+        // Linux/macOS — github raw + env vars (main branch default).
+        assert!(lin.contains("github.com/SQTX/Scrooge-DLP/raw/main/deploy/install-agent.sh"));
+        assert!(lin.contains("MANAGER=mgr.example.com:5443"));
+        assert!(lin.contains("TOKEN=abc"));
+        assert!(lin.contains("sudo -E bash"));
+        assert!(mac.contains("github.com/SQTX/Scrooge-DLP/raw/main/deploy/install-agent.sh"));
+        // Windows placeholder na razie (install-agent.ps1 w v0.3.x).
+        assert!(win.contains("NIE wspierany"));
+    }
+
+    #[test]
+    fn one_liner_with_install_ref_uses_branch() {
+        let mgr = "mgr.example.com:5443";
+        let lin = TargetOs::Linux.one_liner(mgr, "tok", "claude/wizardly-fermi-ae7494");
+        assert!(lin.contains("raw/claude/wizardly-fermi-ae7494/deploy/install-agent.sh"));
+        assert!(lin.contains("INSTALL_REF=claude/wizardly-fermi-ae7494"));
     }
 
     #[test]
