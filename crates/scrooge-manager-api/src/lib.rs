@@ -76,6 +76,7 @@ pub fn router(state: AppState) -> Router {
             post(handlers::policies::rollback),
         )
         .route("/policies/validate", post(handlers::policies::validate))
+        .route("/events", get(handlers::events::list))
         .route("/dashboard/config", get(handlers::dashboard::config))
         .with_state(state.clone());
 
@@ -208,6 +209,7 @@ impl Modify for SecurityAddon {
         handlers::policies::history,
         handlers::policies::rollback,
         handlers::policies::validate,
+        handlers::events::list,
         handlers::dashboard::config,
     ),
     components(schemas(
@@ -227,6 +229,7 @@ impl Modify for SecurityAddon {
         handlers::policies::UpdatePolicyRequest,
         handlers::policies::ValidateRequest,
         handlers::policies::ValidateResponse,
+        handlers::events::EventDto,
         handlers::dashboard::DashboardConfigDto,
         handlers::dashboard::AutoRefreshDto,
         handlers::dashboard::SessionDto,
@@ -238,6 +241,7 @@ impl Modify for SecurityAddon {
         (name = "agents",    description = "Agent registry"),
         (name = "install",   description = "Wazuh-flow agent installer tokens"),
         (name = "policies",  description = "DLP policies CRUD + history + rollback + validate"),
+        (name = "events",    description = "DLP events (read-only, filtered)"),
         (name = "dashboard", description = "Dashboard preferences"),
     )
 )]
