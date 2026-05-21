@@ -132,9 +132,10 @@ build-from-source), `update-manager.sh` one-liner.
 
 ## Aktualnie
 
-**Phase 2 + 2F + 3 MVP zamknięte i zweryfikowane E2E na żywych VM-kach.**
-Tag `v0.3.0` (Phase 3 done = minor bump).
+**Phase 2 + 2F + 3 MVP + 3.x fixy + M4 zamknięte.** Tagi:
+- `v0.3.0` — Phase 3 MVP (clipboard + Luhn + event pipeline)
+- `v0.3.1` — fixy E2E (live broadcast + install onelinery + USER_SERVICE)
+- `v0.3.2` — M4 (PESEL + IBAN + NIP classifiers + mod_filemon)
 
-**Następnie:** Phase 3.x fixy (live policy broadcast + onelinery install
-poprawki + GUI VM demo), potem Phase 4 (event partycjonowanie + offline
-buffering + więcej classifierów).
+**Następnie:** Phase 4 — USB hot-plug (`mod_devctl`), offline buffering
+replay agent ↔ manager, macOS/Windows clipboard, event partition rotate.
