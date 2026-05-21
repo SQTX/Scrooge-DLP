@@ -24,7 +24,8 @@ use scrooge_common::{ca::RootCa, config::ManagerServerConfig};
 use scrooge_manager_api::AgentCommandRequest;
 use scrooge_proto::v1::{
     agent_message, agent_service_server::AgentService, manager_message, AgentMessage, Command,
-    EnrollRequest, EnrollResponse, HeartbeatAck, ManagerMessage, PolicyRef, PolicyUpdate,
+    EnrollRequest, EnrollResponse, EventBatch, HeartbeatAck, ManagerMessage, PolicyRef,
+    PolicyUpdate,
 };
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
@@ -533,6 +534,44 @@ impl AgentService for AgentServiceImpl {
                             );
                         }
                     },
+                    Ok(AgentMessage {
+                        payload: Some(agent_message::Payload::Events(batch)),
+                    }) => {
+                        let count = batch.events.len();
+                        let batch_id = batch.batch_id.clone();
+                        match insert_event_batch(&pool, agent_id, &batch).await {
+                            Ok(inserted) => {
+                                tracing::info!(
+                                    %agent_id,
+                                    %batch_id,
+                                    count,
+                                    inserted,
+                                    "event batch received"
+                                );
+                            },
+                            Err(e) => {
+                                tracing::warn!(
+                                    %agent_id,
+                                    %batch_id,
+                                    error = %e,
+                                    "event batch insert failed"
+                                );
+                            },
+                        }
+                    },
+                    Ok(AgentMessage {
+                        payload: Some(agent_message::Payload::Event(ev)),
+                    }) => {
+                        // Pojedynczy event (proto wspiera oba — agent zwykle
+                        // wysyła batch'em, ale bądźmy defensywni).
+                        let synth = EventBatch {
+                            batch_id: ev.event_id.clone(),
+                            events: vec![ev],
+                        };
+                        if let Err(e) = insert_event_batch(&pool, agent_id, &synth).await {
+                            tracing::warn!(%agent_id, error = %e, "single event insert failed");
+                        }
+                    },
                     Ok(_other) => {
                         tracing::debug!(%agent_id, "other inbound message (ignored in MVP)");
                     },
@@ -556,4 +595,203 @@ fn sha256_hex(input: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input);
     format!("{:x}", hasher.finalize())
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Phase 3 — Event ingestion
+// ────────────────────────────────────────────────────────────────────────────
+
+/// Batch insert eventów do partycjonowanej tabeli `events` (M1 schema).
+///
+/// agent_id pochodzi z mTLS Subject CN — NIE z payload (payload `event.agent_id`
+/// jest ignorowane, mTLS jest authoritative).
+///
+/// Mapowanie pól z proto Event → SQL kolumny:
+/// - `event_id` (UUID string) → `id` (UUID)
+/// - `timestamp_ns` → `timestamp` (TIMESTAMPTZ, z nanoseconds)
+/// - `type` (EventType enum) → `event_type` (TEXT — `.as_str_name()`)
+/// - `severity` enum → `severity` TEXT ("low"/"medium"/"high"/"critical")
+/// - `direction` enum → `direction` TEXT ("inbound"/"outbound"/"internal")
+/// - `matched_policy_id` → `matched_policy` (lub NULL gdy empty string)
+/// - `matched_rule_id` → `matched_rule` (lub NULL)
+/// - `action_taken` enum → `action_taken` TEXT (lub NULL)
+/// - `details` (oneof) → `details` JSONB (per-variant serialize)
+/// - `forward_to_siem` → `forwarded_to_syslog` (zostaje FALSE, manager
+///   forward'uje osobno przez worker'a w przyszłości)
+///
+/// Zwraca liczbę zapisanych rekordów. Pojedyncze błędy decode'a per-event
+/// są logowane i pomijane (best-effort batch).
+async fn insert_event_batch(
+    pool: &PgPool,
+    agent_id: Uuid,
+    batch: &EventBatch,
+) -> Result<usize, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    let mut inserted = 0usize;
+
+    for ev in &batch.events {
+        // event_id: jeśli pusty albo invalid → wygeneruj nowy UUID server-side.
+        let id = Uuid::parse_str(&ev.event_id).unwrap_or_else(|_| Uuid::new_v4());
+        let ts = chrono::DateTime::<chrono::Utc>::from_timestamp_nanos(ev.timestamp_ns);
+
+        let event_type = event_type_to_str(ev.r#type);
+        let severity = severity_to_str(ev.severity);
+        let direction = direction_to_str_opt(ev.direction);
+
+        let matched_policy = if ev.matched_policy_id.is_empty() {
+            None
+        } else {
+            Some(ev.matched_policy_id.as_str())
+        };
+        let matched_rule = if ev.matched_rule_id.is_empty() {
+            None
+        } else {
+            Some(ev.matched_rule_id.as_str())
+        };
+        let action_taken = action_to_str_opt(ev.action_taken);
+
+        // Details: serialize cały Event do JSON żeby zachować pełen oneof
+        // payload + matches. Pole `details` jest typu `Option<event::Details>`,
+        // ale chcemy też matches[]/user_name/process_*  w JSON. Trick: cały Event
+        // serialize'uje się przez prost-build z `prost(skip)` na niektórych
+        // polach, więc używamy `serde_json::to_value` na podstrukturach.
+        // Najprostsze: ręczny JSON z pól które mają sens dla dashboardu.
+        let details_json = build_details_json(ev);
+
+        let result = sqlx::query(
+            "INSERT INTO events (
+                id, timestamp, agent_id, event_type, severity, direction,
+                matched_policy, matched_rule, action_taken, details, forwarded_to_syslog
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(id)
+        .bind(ts)
+        .bind(agent_id)
+        .bind(event_type)
+        .bind(severity)
+        .bind(direction)
+        .bind(matched_policy)
+        .bind(matched_rule)
+        .bind(action_taken)
+        .bind(&details_json)
+        .execute(&mut *tx)
+        .await?;
+
+        if result.rows_affected() > 0 {
+            inserted += 1;
+        }
+    }
+
+    tx.commit().await?;
+    Ok(inserted)
+}
+
+fn event_type_to_str(value: i32) -> &'static str {
+    use scrooge_proto::v1::EventType;
+    EventType::try_from(value).map_or("EVENT_TYPE_UNSPECIFIED", |e| e.as_str_name())
+}
+
+fn severity_to_str(value: i32) -> &'static str {
+    use scrooge_proto::v1::Severity;
+    match Severity::try_from(value).unwrap_or(Severity::Unspecified) {
+        Severity::Medium => "medium",
+        Severity::High => "high",
+        Severity::Critical => "critical",
+        // M1 CHECK constraint dopuszcza low/medium/high/critical —
+        // Unspecified mapujemy na "low" jako safe default.
+        Severity::Low | Severity::Unspecified => "low",
+    }
+}
+
+fn direction_to_str_opt(value: i32) -> Option<&'static str> {
+    use scrooge_proto::v1::Direction;
+    match Direction::try_from(value).ok()? {
+        Direction::Inbound => Some("inbound"),
+        Direction::Outbound => Some("outbound"),
+        Direction::Internal => Some("internal"),
+        Direction::Unspecified => None,
+    }
+}
+
+fn action_to_str_opt(value: i32) -> Option<&'static str> {
+    use scrooge_proto::v1::Action;
+    match Action::try_from(value).ok()? {
+        Action::Unspecified => None,
+        Action::LogOnly => Some("log_only"),
+        Action::Alert => Some("log_and_alert"),
+        Action::WarnUser => Some("warn_user"),
+        Action::Block => Some("block"),
+        Action::Quarantine => Some("quarantine"),
+        Action::KillProcess => Some("kill_process"),
+        Action::LockWorkstation => Some("lock_workstation"),
+    }
+}
+
+/// Buduje JSONB z najważniejszych pól eventu — używane przez dashboard
+/// do filtrowania i wyświetlania. Klucze stabilne (front-end ma się na nich
+/// opierać).
+fn build_details_json(ev: &scrooge_proto::v1::Event) -> serde_json::Value {
+    use scrooge_proto::v1::event::Details;
+    let mut obj = serde_json::Map::new();
+    if !ev.user_name.is_empty() {
+        obj.insert("user_name".into(), ev.user_name.clone().into());
+    }
+    if ev.process_id != 0 {
+        obj.insert("process_id".into(), ev.process_id.into());
+    }
+    if !ev.process_name.is_empty() {
+        obj.insert("process_name".into(), ev.process_name.clone().into());
+    }
+
+    // Matches — lista classifier-trafień.
+    if !ev.matches.is_empty() {
+        let arr: Vec<serde_json::Value> = ev
+            .matches
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "classifier_id": m.classifier_id,
+                    "match_count": m.match_count,
+                    "sample_excerpt": m.sample_excerpt,
+                })
+            })
+            .collect();
+        obj.insert("matches".into(), serde_json::Value::Array(arr));
+    }
+
+    // Details per-domena.
+    if let Some(d) = &ev.details {
+        match d {
+            Details::Clipboard(c) => {
+                obj.insert(
+                    "clipboard".into(),
+                    serde_json::json!({
+                        "content_size": c.content_size,
+                        "content_preview": c.content_preview,
+                        "mime_type": c.mime_type,
+                        "source_process_name": c.source_process_name,
+                        "was_cleared": c.was_cleared,
+                    }),
+                );
+            },
+            Details::File(f) => {
+                obj.insert(
+                    "file".into(),
+                    serde_json::json!({
+                        "path": f.path,
+                        "size_bytes": f.size_bytes,
+                        "mime_type": f.mime_type,
+                    }),
+                );
+            },
+            // Pozostałe oneof'y serializujemy proste przez Debug — nie
+            // używane jeszcze w MVP, ale ratuje audit gdy wjadą.
+            other => {
+                obj.insert("other_details".into(), format!("{other:?}").into());
+            },
+        }
+    }
+
+    serde_json::Value::Object(obj)
 }
